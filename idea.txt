@@ -1,0 +1,12 @@
+In Farmahin, a small town in Iran, there are a few coffee shops. They serve espersso coffee. There are roughly 1000 people that drink coffee for at least 
+a cup each day. They are usually Men workers and employees. Recently a small number of this community thought that maybe they can buy coffee in whole
+and enjoy a substantial discount. We thought we may create a digital asset on block chain to handle accounting. We chose Stellar network for this asset. 
+Drinkers will buy these coins. Coffeshops would accept the coins. Each coin would worth a cup of coffee. We may buy soemthing like a metric ton of coffee 
+with a 30% discount. The coffee will be stored. Each coffee shop sends coins to the store and receives dry coffee, This way the community will enjoy something
+about 30% discount in each cup. We thought we'd better to develop a custom wallet with convinient and funny interface. The walet would be used in the coffee 
+shops to buy coffee. So the idea is to develop a Stellar Wallet that:
+1. Is developed as a Telegram MiniApp (Bot). The comunity is already using Telegram and there would be no need for installing a new app.
+2. coffee-themed games (Espresso Roulette, Brewing Speed Challenge, Barista Puzzle) and a weekly 100-coin lottery, all inside the Telegram MiniApp.
+3. The app will be deployed on Vercel Serverless service.
+4. Buying coffee and sending the coin would be all fun.
+

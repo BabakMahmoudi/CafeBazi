@@ -1,0 +1,68 @@
+{
+  "name": "cafe-bazi",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "node --conditions=react-server --import tsx scripts/seed-dev.ts",
+    "db:testnet": "node --conditions=react-server --import tsx scripts/setup-testnet.ts",
+    "bot:setwebhook": "node --conditions=react-server --import tsx scripts/set-webhook.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "1.1.0",
+    "@stellar/stellar-sdk": "16.2.0",
+    "@tanstack/react-query": "^5.101.4",
+    "@telegram-apps/sdk-react": "3.3.9",
+    "@tma.js/init-data-node": "2.0.8",
+    "@trpc/client": "^11.18.0",
+    "@trpc/react-query": "^11.18.0",
+    "@trpc/server": "^11.18.0",
+    "drizzle-orm": "~0.44.7",
+    "jose": "^6.2.8",
+    "next": "16.3.1",
+    "next-intl": "~4.13.6",
+    "qrcode": "^1.5.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "superjson": "^2.2.6",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.10",
+    "dotenv": "^17.4.2",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.1",
+    "playwright": "^1.62.1",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.12",
+    "typescript": "^5",
+    "vitest": "^4.1.10"
+  },
+  "packageManager": "pnpm@10.34.5",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "@swc/core",
+      "esbuild"
+    ]
+  }
+}

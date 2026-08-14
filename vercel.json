@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "**/*.ts": {
+      "runtime": "nodejs22.x"
+    }
+  },
+  "crons": []
+}

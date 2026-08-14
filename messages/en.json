@@ -1,0 +1,87 @@
+{
+  "app": {
+    "title": "Cafe Bazi",
+    "tagline": "1 cup = 1 TAK"
+  },
+  "nav": {
+    "wallet": "Wallet",
+    "buy": "Buy coffee",
+    "send": "Send a cup"
+  },
+  "wallet": {
+    "balance": "Balance",
+    "tak": "TAK",
+    "transactions": "Transactions",
+    "empty": "No transactions yet",
+    "loading": "Loading…",
+    "confirmed": "Confirmed",
+    "pending": "Pending",
+    "submitted": "Processing",
+    "failed": "Failed",
+    "purchase": "Coffee purchase",
+    "p2p": "Gift",
+    "gift": "Gift",
+    "mint": "Mint",
+    "burn": "Burn",
+    "redemption": "Redemption",
+    "lottery": "Lottery"
+  },
+  "onboarding": {
+    "title": "Welcome to Cafe Bazi",
+    "hint": "Your Stellar wallet is created right now.",
+    "button": "Get started",
+    "pendingFunding": "Your account is being funded; try again shortly."
+  },
+  "buy": {
+    "title": "Buy coffee",
+    "selectShop": "Shops",
+    "cups": "Cups",
+    "cup": "cup",
+    "cupsUnit": "cups",
+    "confirm": "Pay",
+    "brewing": "Brewing…",
+    "confirmed": "Enjoy! Your coffee is ready ☕",
+    "error": "Payment failed. Try again."
+  },
+  "send": {
+    "title": "Send a cup",
+    "recents": "Recent",
+    "search": "Search username…",
+    "noResults": "No user found",
+    "amount": "Cups",
+    "memo": "Message (optional)",
+    "memoPlaceholder": "e.g. Enjoy!",
+    "confirm": "Send",
+    "success": "Cup sent ☕",
+    "error": "Send failed. Try again."
+  },
+  "qr": {
+    "title": "Shop payment card",
+    "scanHint": "Scan this code with the Telegram camera and start the MiniApp to pay.",
+    "table": "Table",
+    "botLink": "Link preview"
+  },
+  "errors": {
+    "unauthorized": "Please sign in first.",
+    "insufficient": "Insufficient balance.",
+    "rateLimit": "Daily send limit reached.",
+    "recipientNotFound": "Recipient not found.",
+    "shopNotFound": "Shop is not active.",
+    "generic": "Something went wrong. Try again."
+  },
+  "bot": {
+    "confirmPrompt": "Send a cup to {name}?",
+    "confirm": "☕ Yes",
+    "confirmGift": "🎁 Two",
+    "cancel": "No",
+    "boughtCupFor": "{name} bought you a cup of coffee ☕",
+    "sentCup": "A cup was sent to {name} ☕",
+    "unknownRecipient": "This user has not joined Cafe Bazi yet.",
+    "invalidCommand": "Format: /coffee @username 2",
+    "canceled": "Canceled.",
+    "alreadyHandled": "This request was already processed.",
+    "error": "Sorry, something went wrong. Try again.",
+    "insufficient": "Your balance is not enough.",
+    "memoPresets": ["☕", "🎁", "Enjoy!", "Bon appetit"]
+  }
+}
