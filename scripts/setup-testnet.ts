@@ -1,5 +1,7 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+
+dotenv.config({ path: existsSync(".env.local") ? ".env.local" : ".env" });
 import path from "node:path";
 import {
   Asset,

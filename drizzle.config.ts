@@ -1,5 +1,8 @@
 import { defineConfig } from "drizzle-kit";
-import "dotenv/config";
+import dotenv from "dotenv";
+import { existsSync } from "node:fs";
+
+dotenv.config({ path: existsSync(".env.local") ? ".env.local" : ".env" });
 
 export default defineConfig({
   schema: "./src/db/schema.ts",

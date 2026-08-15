@@ -1,4 +1,7 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import { existsSync } from "node:fs";
+
+dotenv.config({ path: existsSync(".env.local") ? ".env.local" : ".env" });
 import { db } from "@/db";
 import { coffeeShops, users } from "@/db/schema";
 
