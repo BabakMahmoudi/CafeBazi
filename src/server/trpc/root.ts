@@ -4,13 +4,14 @@ import { router, protectedProcedure } from "./middleware";
 import { executePayment, getPaymentStatus } from "@/services/payments";
 import { getRecipientPicker } from "@/services/recipients";
 import { getActiveShopBySlug, listActiveShops } from "@/services/shops";
-import { getWallet } from "@/services/wallet";
+import { getWallet, syncBalanceFromChain } from "@/services/wallet";
 
 const amountSchema = z.bigint().positive();
 
 export const appRouter = router({
   wallet: router({
     get: protectedProcedure.query(async ({ ctx }) => getWallet(ctx.user.id)),
+    sync: protectedProcedure.mutation(async ({ ctx }) => syncBalanceFromChain(ctx.user.id)),
   }),
   payments: router({
     create: protectedProcedure

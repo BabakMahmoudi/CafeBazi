@@ -261,6 +261,7 @@ The internal API is a **tRPC router** (`src/server/trpc/root.ts`) mounted at `/a
 | Procedure | Type | Auth | Purpose |
 |---|---|---|---|
 | `wallet.get` | query | JWT | Balance + transaction history |
+| `wallet.sync` | mutation | JWT | Refresh the cached `balances` row from the on-chain TAK balance (picks up external send/receive from standard Stellar wallets) |
 | `payments.create` | mutation | JWT (member) | Create coffee payment (build, sign, submit) |
 | `payments.status(id)` | query | JWT | Payment status |
 | `payments.send` | mutation | JWT (member) | Peer-to-peer TAK payment: resolve recipient (username/contacts), build, sign, submit |

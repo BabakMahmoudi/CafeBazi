@@ -2,12 +2,35 @@ import "server-only";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { balances, transactions } from "@/db/schema";
-import { takFromNumeric } from "@/lib/money";
+import { takFromNumeric, takToNumeric } from "@/lib/money";
 import { getStellarAccountByUserId } from "@/services/users";
+import { getAccountBalance } from "@/services/stellar";
 
 export async function getCachedBalance(userId: string): Promise<bigint> {
   const rows = await db.select().from(balances).where(eq(balances.userId, userId)).limit(1);
   return rows[0] ? takFromNumeric(rows[0].amount) : 0n;
+}
+
+export async function syncBalanceFromChain(userId: string): Promise<{ balance: bigint }> {
+  const account = await getStellarAccountByUserId(userId);
+  if (!account || account.status !== "active") {
+    return { balance: await getCachedBalance(userId) };
+  }
+
+  const balance = await getAccountBalance(account.publicKey);
+  const amount = takToNumeric(balance);
+  const rows = await db.select().from(balances).where(eq(balances.userId, userId)).limit(1);
+
+  if (rows[0]) {
+    await db
+      .update(balances)
+      .set({ amount, updatedAt: new Date() })
+      .where(eq(balances.id, rows[0].id));
+  } else {
+    await db.insert(balances).values({ userId, amount });
+  }
+
+  return { balance };
 }
 
 export async function getWallet(userId: string) {

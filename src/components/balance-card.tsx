@@ -6,10 +6,18 @@ import { trpc } from "@/lib/trpc/client";
 
 export function BalanceCard() {
   const t = useTranslations();
+  const [copied, setCopied] = useState(false);
+  const [synced, setSynced] = useState(false);
   const wallet = trpc.wallet.get.useQuery();
+  const sync = trpc.wallet.sync.useMutation({
+    onSuccess: () => {
+      setSynced(true);
+      wallet.refetch();
+      setTimeout(() => setSynced(false), 2000);
+    },
+  });
   const balance = wallet.data?.balance ?? 0n;
   const accountId = wallet.data?.stellarAccountId ?? null;
-  const [copied, setCopied] = useState(false);
 
   async function copyAccountId() {
     if (!accountId || copied) return;
@@ -29,10 +37,21 @@ export function BalanceCard() {
 
   return (
     <div className="rounded-2xl bg-accent p-5 text-white shadow-sm">
-      <p className="text-sm opacity-80">{t("wallet.balance")}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm opacity-80">{t("wallet.balance")}</p>
+        <button
+          type="button"
+          onClick={() => sync.mutate()}
+          disabled={sync.isPending}
+          className="rounded-lg bg-white/10 px-2 py-1 text-xs font-medium transition-colors hover:bg-white/20 disabled:opacity-50"
+        >
+          {sync.isPending ? t("wallet.syncing") : synced ? t("wallet.synced") : t("wallet.sync")}
+        </button>
+      </div>
       <p className="mt-1 text-3xl font-bold">
         {balance.toString()} {t("wallet.tak")}
       </p>
+      {sync.isError && <p className="mt-2 text-xs text-red-200">{t("wallet.syncFailed")}</p>}
       {accountId && (
         <div className="mt-4 border-t border-white/20 pt-3">
           <p className="text-xs opacity-80">{t("wallet.accountId")}</p>
