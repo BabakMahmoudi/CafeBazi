@@ -33,7 +33,10 @@ export function OnboardingGate() {
     try {
       let initData: string | undefined;
       try {
-        initData = retrieveRawInitData();
+        const webAppInitData = (
+          window as Window & { Telegram?: { WebApp?: { initData?: string } } }
+        ).Telegram?.WebApp?.initData;
+        initData = webAppInitData || retrieveRawInitData();
       } catch {
         initData = undefined;
       }

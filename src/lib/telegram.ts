@@ -23,7 +23,9 @@ export function validateTelegramInitData(initDataRaw: string): InitData {
   try {
     validate(initDataRaw, env.TELEGRAM_BOT_TOKEN);
   } catch (error) {
-    throw new TelegramInitDataError(error instanceof Error ? error.message : "Invalid initData signature");
+    throw new TelegramInitDataError(
+      error instanceof Error ? `${error.name}: ${error.message}` : "Invalid initData signature",
+    );
   }
   return data;
 }

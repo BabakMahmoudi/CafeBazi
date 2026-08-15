@@ -26,6 +26,7 @@ export async function POST(req: Request) {
       initData = validateTelegramInitData(parsed.data.initData);
     } catch (error) {
       console.error("auth/tma: invalid initData", error);
+      console.error("auth/tma: initData received:", parsed.data.initData);
       return Response.json({ ok: false, error: "invalid_init_data" }, { status: 401 });
     }
 
