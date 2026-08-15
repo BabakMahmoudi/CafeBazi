@@ -166,7 +166,10 @@ export async function getAccountBalance(publicKey: string): Promise<bigint> {
   const server = new s.Horizon.Server(env.HORIZON_URL);
   const account = await server.loadAccount(publicKey);
   const balance = account.balances.find(
-    (entry) => "asset_code" in entry && entry.asset_code === TAK_ASSET_CODE,
+    (entry) =>
+      "asset_code" in entry &&
+      entry.asset_code === TAK_ASSET_CODE &&
+      entry.asset_issuer === getIssuerPublicKey(),
   );
   return balance ? BigInt(Math.trunc(Number(balance.balance))) : 0n;
 }

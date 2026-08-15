@@ -34,7 +34,7 @@ describe("wallet service — chain balance sync", () => {
   it("replaces the cached balance with the on-chain TAK balance", async () => {
     const result = await syncBalanceFromChain("u1");
 
-    expect(result.balance).toBe(42n);
+    expect(result).toEqual({ balance: 42n, synced: true });
     expect(h.stellar.getAccountBalance).toHaveBeenCalledWith("GA-USER");
     expect(h.db.tables().balances[0].amount).toBe("42");
   });
@@ -44,13 +44,13 @@ describe("wallet service — chain balance sync", () => {
 
     const result = await syncBalanceFromChain("u1");
 
-    expect(result.balance).toBe(42n);
+    expect(result).toEqual({ balance: 42n, synced: true });
     const balance = h.db.tables().balances[0];
     expect(balance.userId).toBe("u1");
     expect(balance.amount).toBe("42");
   });
 
-  it("leaves the cached balance untouched when the account is not active", async () => {
+  it("leaves the cached balance untouched and reports synced=false when the account is not active", async () => {
     h.db = seedDb({
       stellarAccounts: [
         { id: "sa1", userId: "u1", publicKey: "GA-USER", encryptedSecret: "enc", status: "pending_funding" },
@@ -59,17 +59,17 @@ describe("wallet service — chain balance sync", () => {
 
     const result = await syncBalanceFromChain("u1");
 
-    expect(result.balance).toBe(10n);
+    expect(result).toEqual({ balance: 10n, synced: false });
     expect(h.stellar.getAccountBalance).not.toHaveBeenCalled();
     expect(h.db.tables().balances[0].amount).toBe("10");
   });
 
-  it("keeps the cached balance when the user has no stellar account", async () => {
+  it("reports synced=false when the user has no stellar account", async () => {
     h.db = seedDb({ stellarAccounts: [] });
 
     const result = await syncBalanceFromChain("u1");
 
-    expect(result.balance).toBe(10n);
+    expect(result).toEqual({ balance: 10n, synced: false });
     expect(h.stellar.getAccountBalance).not.toHaveBeenCalled();
   });
 

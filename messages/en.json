@@ -18,6 +18,7 @@
     "syncing": "Updating…",
     "synced": "Updated",
     "syncFailed": "Could not update balance",
+    "syncNotReady": "Your Stellar account is not ready yet",
     "transactions": "Transactions",
     "empty": "No transactions yet",
     "loading": "Loading…",

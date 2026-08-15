@@ -11,10 +11,10 @@ export async function getCachedBalance(userId: string): Promise<bigint> {
   return rows[0] ? takFromNumeric(rows[0].amount) : 0n;
 }
 
-export async function syncBalanceFromChain(userId: string): Promise<{ balance: bigint }> {
+export async function syncBalanceFromChain(userId: string): Promise<{ balance: bigint; synced: boolean }> {
   const account = await getStellarAccountByUserId(userId);
   if (!account || account.status !== "active") {
-    return { balance: await getCachedBalance(userId) };
+    return { balance: await getCachedBalance(userId), synced: false };
   }
 
   const balance = await getAccountBalance(account.publicKey);
@@ -30,7 +30,7 @@ export async function syncBalanceFromChain(userId: string): Promise<{ balance: b
     await db.insert(balances).values({ userId, amount });
   }
 
-  return { balance };
+  return { balance, synced: true };
 }
 
 export async function getWallet(userId: string) {

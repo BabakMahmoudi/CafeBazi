@@ -6,13 +6,19 @@ import { trpc } from "@/lib/trpc/client";
 
 export function BalanceCard() {
   const t = useTranslations();
+  const utils = trpc.useUtils();
   const [copied, setCopied] = useState(false);
   const [synced, setSynced] = useState(false);
   const wallet = trpc.wallet.get.useQuery();
   const sync = trpc.wallet.sync.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.synced) {
+        utils.wallet.get.setData(undefined, (prev) =>
+          prev ? { ...prev, balance: data.balance } : prev,
+        );
+        utils.wallet.get.invalidate();
+      }
       setSynced(true);
-      wallet.refetch();
       setTimeout(() => setSynced(false), 2000);
     },
   });
@@ -42,7 +48,7 @@ export function BalanceCard() {
         <button
           type="button"
           onClick={() => sync.mutate()}
-          disabled={sync.isPending}
+          disabled={sync.isPending || !accountId}
           className="rounded-lg bg-white/10 px-2 py-1 text-xs font-medium transition-colors hover:bg-white/20 disabled:opacity-50"
         >
           {sync.isPending ? t("wallet.syncing") : synced ? t("wallet.synced") : t("wallet.sync")}
@@ -52,6 +58,9 @@ export function BalanceCard() {
         {balance.toString()} {t("wallet.tak")}
       </p>
       {sync.isError && <p className="mt-2 text-xs text-red-200">{t("wallet.syncFailed")}</p>}
+      {sync.data && !sync.data.synced && !sync.isPending && (
+        <p className="mt-2 text-xs text-red-200">{t("wallet.syncNotReady")}</p>
+      )}
       {accountId && (
         <div className="mt-4 border-t border-white/20 pt-3">
           <p className="text-xs opacity-80">{t("wallet.accountId")}</p>
