@@ -32,10 +32,18 @@ function tokenize(cond: unknown): Tok[] {
         } else {
           out.push(value as string);
         }
+      } else if (typeof chunk === "string") {
+        out.push({ val: chunk });
       } else if (ctor === "Param") {
         out.push({ val: c.value });
       } else if (chunk instanceof Date) {
         out.push({ val: chunk });
+      } else if (Array.isArray(chunk)) {
+        out.push("(");
+        for (const item of chunk) {
+          walk({ queryChunks: [item] });
+        }
+        out.push(")");
       } else if (ctor === "SQL") {
         walk(chunk as { queryChunks?: unknown[] });
       } else if (c && typeof c.name === "string" && c.table) {
@@ -107,13 +115,14 @@ function parseAtoms(tokens: Tok[]): Atom {
   let depth = 0;
   for (let i = 0; i < meaningful.length; i++) {
     const tok = meaningful[i];
+    const keyword = typeof tok === "string" ? tok.trim().toLowerCase() : "";
     if (tok === "(") depth += 1;
     else if (tok === ")") depth -= 1;
-    else if (depth === 0 && (tok === "AND" || tok === "OR")) {
-      const connector = tok as "AND" | "OR";
+    else if (depth === 0 && (keyword === "and" || keyword === "or")) {
+      const connector = keyword as "and" | "or";
       const left = parseAtoms(meaningful.slice(0, i));
       const right = parseAtoms(meaningful.slice(i + 1));
-      return { op: connector === "AND" ? "and" : "or", children: [left, right] };
+      return { op: connector === "and" ? "and" : "or", children: [left, right] };
     }
   }
 

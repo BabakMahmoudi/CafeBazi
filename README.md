@@ -8,6 +8,7 @@ A community coffee-coin for Farmahin, Iran — a custodial Stellar wallet as a T
 
 - The community buys coffee **wholesale (~1 metric ton, ~30% discount)** and stores it centrally.
 - **1 TAK = 1 cup of espresso** at any participating coffee shop in Farmahin — *tak* (تک) is Persian for a single espresso shot.
+- TAK lives on-chain in a **SEP-41 Soroban token contract**; transfers and balance reads go through Soroban RPC (no trustlines).
 - Shops send TAK to the store and receive **dry coffee**; the community shares the ~30% saving.
 - Your coins live in a **custodial Stellar account**: the server holds and signs, keys are encrypted at rest. Coffee-themed games (Espresso Roulette, Brewing Speed Challenge, Barista Puzzle) and a **weekly 100-TAK lottery** make buying coffee fun.
 
@@ -19,6 +20,7 @@ A community coffee-coin for Farmahin, Iran — a custodial Stellar wallet as a T
 - Gift TAK to friends — recipient picker (username search + recents) inside the MiniApp
 - Pay-by-QR — static per-shop/per-table cards deep-link into the app and pre-fill the order
 - Pay-by-message — forward a friend's message into the bot chat and tap to buy them a cup
+- Admin console at `/admin` — list users (name, Stellar address, cached balance), add/edit users, and sync balances from the chain
 - Persian-first UI with RTL; English fallback
 
 ## Tech stack
@@ -27,7 +29,7 @@ A community coffee-coin for Farmahin, Iran — a custodial Stellar wallet as a T
 |---|---|
 | Framework | Next.js 16 (App Router) on Vercel serverless, **Node 22** |
 | Language | TypeScript (strict), React 19, pnpm |
-| Blockchain | Stellar (`@stellar/stellar-sdk@16.2.0`), custom asset `TAK` |
+| Blockchain | Stellar (`@stellar/stellar-sdk@16.2.0`), TAK as a SEP-41 Soroban token contract (no trustlines) |
 | Database | Neon Postgres + Drizzle ORM (`drizzle-orm@0.44+`, `@neondatabase/serverless@1.1.0`) |
 | Typed API | tRPC v11 (`@trpc/server` + `@trpc/client` + `@trpc/react-query`) with Zod input schemas and superjson (`bigint` money); client side via `@tanstack/react-query` |
 | Telegram | `@tma.js/init-data-node@2.0.8` (server-side auth) + `@telegram-apps/sdk-react@3.3.9` (client) |
@@ -62,6 +64,8 @@ Seeds a local database with an admin user and two active shops (QR slugs `s1`, `
 $env:SEED_ADMIN_TELEGRAM_ID="<your telegram id>"; pnpm db:seed
 ```
 
+> Access to `/admin` requires logging into the MiniApp as the seeded admin (the seed sets `role = admin`).
+
 ### Bot webhook registration
 
 Run after every deploy so Telegram routes updates to the bot:
@@ -76,12 +80,13 @@ pnpm bot:setwebhook   # registers ${NEXT_PUBLIC_APP_URL}/api/bot/webhook with se
 |---|---|---|
 | `DATABASE_URL` | yes | Neon Postgres connection string (server-only) |
 | `TELEGRAM_BOT_TOKEN` | yes | Telegram bot token for initData validation + webhook secret (server-only) |
+| `WEBHOOK_SECRET_TOKEN` | no | Random secret for the bot webhook `secret_token` guard (server-only) |
 | `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | yes | Public bot username (no `@`) used in QR `startapp` deep links |
 | `KEY_ENCRYPTION_KEY` | yes | AES-256-GCM master key for Stellar secrets (server-only). Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
 | `STELLAR_NETWORK` | dev | `testnet` (default) or `mainnet` |
 | `HORIZON_URL` | dev | Horizon endpoint for the active network |
-| `SOROBAN_RPC_URL` | dev | Soroban RPC endpoint (defaults to testnet) |
-| `TAK_CONTRACT_ID` | yes* | TAK Soroban token contract; on-chain balance is read from the contract when set |
+| `SOROBAN_RPC_URL` | dev | Soroban RPC endpoint for the TAK SEP-41 token contract (defaults to testnet) |
+| `TAK_CONTRACT_ID` | yes* | TAK SEP-41 Soroban token contract address; setting it activates contract mode (SEP-41 `transfer` payments + `("Balance", address)` balance reads); unset → classic trustline fallback |
 | `TAK_ISSUER_PUBLIC_KEY` | yes* | TAK issuer public key (from `pnpm db:testnet`) (server-only) |
 | `CRON_SECRET` | prod | Bearer secret guarding `/api/cron/lottery` (server-only) |
 | `JWT_SECRET` | yes | JWT signing secret for the MiniApp session cookie (server-only). Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` |
@@ -118,7 +123,11 @@ src/
 │  │  ├─ bot/webhook/route.ts   # plain handler: Telegram updates → chat payments
 │  │  └─ health/route.ts        # public liveness probe
 │  └─ [locale]/                 # i18n pages; fa default, RTL
-├─ components/         # UI components (tRPC React Query hooks)
+│     ├─ admin/page.tsx         # admin console: user management
+│     ├─ buy/page.tsx           # coffee purchase
+│     ├─ send/page.tsx          # P2P gifting
+│     └─ qr/[shopSlug]/page.tsx # shop/table QR card
+├─ components/         # UI components (tRPC React Query hooks); components/admin/ = admin console
 ├─ db/                 # Drizzle schema + client (server-only)
 ├─ server/trpc/        # tRPC router: root.ts, context.ts, middleware.ts
 ├─ services/           # stellar, payments (purchase + P2P + chat), users, wallet, recipients, shops, bot

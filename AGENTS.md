@@ -25,7 +25,7 @@ Roadmap Phases 1–3 are implemented (foundation, payments + P2P, chat payments)
 
 ## Tech stack
 
-Next.js 16 (App Router), React 19, TypeScript (strict), pnpm, **Node 22** (required by `@stellar/stellar-sdk@16.2.0`), Neon Postgres + Drizzle ORM, **tRPC v11 + Zod + superjson** for the end-to-end typed API (client side via `@tanstack/react-query`), `@tma.js/init-data-node@2.0.8` (NOT the deprecated `@telegram-apps/init-data-node`), `@telegram-apps/sdk-react@3.x`, `next-intl` (Persian-first RTL).
+Next.js 16 (App Router), React 19, TypeScript (strict), pnpm, **Node 22** (required by `@stellar/stellar-sdk@16.2.0`), Neon Postgres + Drizzle ORM, **tRPC v11 + Zod + superjson** for the end-to-end typed API (client side via `@tanstack/react-query`), `@tma.js/init-data-node@2.0.8` (NOT the deprecated `@telegram-apps/init-data-node`), `@telegram-apps/sdk-react@3.x`, `next-intl` (Persian-first RTL). TAK is a **SEP-41 Soroban token contract**: payments/balance reads use contract mode (`TAK_CONTRACT_ID` + `SOROBAN_RPC_URL`) with a classic trustline fallback; on-chain amounts are `i128 × 10^7`, the app layer is whole-TAK `bigint`.
 
 ## Conventions
 
@@ -33,9 +33,10 @@ Next.js 16 (App Router), React 19, TypeScript (strict), pnpm, **Node 22** (requi
 - Components in `src/components`; tRPC router in `src/server/trpc`; plain route handlers in `src/app/api`; Drizzle schema in `src/db/schema.ts`.
 - tRPC is the only client→server API transport. Plain Route Handlers exist only for external entry points: `/api/auth/tma`, `/api/bot/webhook`, `/api/cron/lottery`, `/api/health` (see ARCHITECTURE.md §8.2).
 - Every tRPC procedure has a Zod input schema and runs behind `protectedProcedure`/`adminProcedure` — no untyped or unauthorized procedures.
+- Admin console at `/admin` (`src/app/[locale]/admin/page.tsx`); all admin data flows through `admin.users.*` procedures behind `adminProcedure`, and the page redirects non-admins server-side.
 - Stellar and DB access only via the service layer (`src/services`) — no raw Horizon/query calls in components or procedures.
 - Stellar/DB modules are `server-only`; never import them from client bundles.
-- Money is always an integer: `bigint` in TS, `numeric` in Postgres. No decimals anywhere. `bigint` crosses the tRPC boundary via the superjson transformer.
+- Money is always an integer at the app layer: `bigint` in TS, `numeric` in Postgres. No decimals in app code; on-chain, TAK is `i128 × 10^7` (SEP-41) — the scaling constant (`TAK_DECIMALS`) lives in `src/services/stellar.ts`. `bigint` crosses the tRPC boundary via the superjson transformer.
 - Persian-first, RTL; all UI text via next-intl keys (`fa` default, `en` fallback).
 - No code comments unless asked. Match existing patterns.
 

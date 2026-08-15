@@ -6,7 +6,8 @@
   "nav": {
     "wallet": "Wallet",
     "buy": "Buy coffee",
-    "send": "Send a cup"
+    "send": "Send a cup",
+    "admin": "Admin panel"
   },
   "wallet": {
     "balance": "Balance",
@@ -71,6 +72,50 @@
     "scanHint": "Scan this code with the Telegram camera and start the MiniApp to pay.",
     "table": "Table",
     "botLink": "Link preview"
+  },
+  "admin": {
+    "title": "User management",
+    "description": "View, add and edit users",
+    "searchPlaceholder": "Search name or username…",
+    "addUser": "Add user",
+    "editUser": "Edit user",
+    "name": "Name",
+    "username": "Username",
+    "phone": "Phone",
+    "role": "Role",
+    "address": "Stellar account",
+    "balance": "Balance",
+    "tak": "TAK",
+    "status": "Status",
+    "createdAt": "Created",
+    "telegramId": "Telegram ID",
+    "telegramIdHint": "If left empty, the user cannot sign in with Telegram.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "save": "Save",
+    "cancel": "Cancel",
+    "sync": "Sync from Stellar",
+    "syncing": "Syncing…",
+    "synced": "Synced",
+    "roleMember": "Member",
+    "roleMerchant": "Merchant",
+    "roleAdmin": "Admin",
+    "accountActive": "Active",
+    "accountPendingFunding": "Pending funding",
+    "accountDisabled": "Disabled",
+    "accountNone": "No account",
+    "noUsers": "No users found",
+    "loading": "Loading…",
+    "previous": "Previous",
+    "next": "Next",
+    "notAdmin": "You do not have admin access.",
+    "telegramIdHint": "If left empty, the user cannot sign in with Telegram.",
+    "errors": {
+      "conflict": "This Telegram ID is already registered.",
+      "notFound": "User not found.",
+      "lastAdmin": "The last admin cannot be changed.",
+      "generic": "Something went wrong. Try again."
+    }
   },
   "errors": {
     "unauthorized": "Please sign in first.",

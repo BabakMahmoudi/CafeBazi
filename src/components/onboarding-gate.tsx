@@ -14,6 +14,7 @@ type AuthState = "checking" | "guest" | "ready";
 export function OnboardingGate() {
   const t = useTranslations();
   const wallet = trpc.wallet.get.useQuery(undefined, { retry: false });
+  const role = trpc.session.role.useQuery(undefined, { retry: false });
   const [pendingFunding, setPendingFunding] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -120,6 +121,14 @@ export function OnboardingGate() {
           {t("nav.send")}
         </Link>
       </nav>
+      {role.data === "admin" && (
+        <Link
+          href="/admin"
+          className="rounded-xl border border-accent px-4 py-3 text-center font-semibold text-accent"
+        >
+          {t("nav.admin")}
+        </Link>
+      )}
       <TransactionsList />
     </div>
   );

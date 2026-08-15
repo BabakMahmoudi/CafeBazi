@@ -12,7 +12,7 @@ I'm in **Ask mode (read-only)** — I cannot create or modify files in the repos
 ## 0. Known blockers — fix before deploying (all in the codebase today)
 
 1. **No TAK contract config in env**
-   On-chain balances and payments now go through the TAK Soroban token contract. Set
+   On-chain balances and payments now go through the TAK SEP-41 Soroban token contract. Set
    `TAK_CONTRACT_ID` (and `SOROBAN_RPC_URL` if not testnet) in `.env.local` / Vercel env;
    without it the app falls back to classic trustline payments, which will fail unless
    trustlines exist. Trustlines are no longer created at onboarding.
@@ -112,10 +112,11 @@ because `src/lib/env.ts` validates at module load:
 |---|---|---|
 | `DATABASE_URL` | yes | Neon production connection string |
 | `TELEGRAM_BOT_TOKEN` | yes | initData HMAC + webhook secret-token |
+| `WEBHOOK_SECRET_TOKEN` | no | optional webhook `secret_token` guard (must be A-Z, a-z, 0-9, `_`, `-`) |
 | `KEY_ENCRYPTION_KEY` | yes | AES-256-GCM master key (base64, 32 bytes) |
 | `TAK_ISSUER_PUBLIC_KEY` | yes | from `pnpm db:testnet` |
-| `TAK_CONTRACT_ID` | yes | TAK Soroban token contract (balances read from the contract) |
-| `SOROBAN_RPC_URL` | dev | defaults to testnet Soroban RPC |
+| `TAK_CONTRACT_ID` | yes | TAK SEP-41 Soroban token contract (SEP-41 `transfer` payments + `("Balance", address)` balance reads) |
+| `SOROBAN_RPC_URL` | dev | Soroban RPC endpoint for the TAK SEP-41 contract; defaults to testnet |
 | `JWT_SECRET` | yes | MiniApp session cookie signing |
 | `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | yes | bot username without `@` (QR deep links) |
 | `NEXT_PUBLIC_APP_URL` | yes | `https://<your-domain>.vercel.app` (webhook + QR) |
@@ -159,6 +160,8 @@ Registers `POST https://<your-domain>/api/bot/webhook` with secret-token mode
    a test user via the token contract, then complete a purchase and check the shop balance
    + audit log.
 4. Forward a friend's message into the bot DM and confirm the inline keyboard flow.
+5. Open `/admin` as the seeded admin and confirm the user list renders (search, paginate,
+   add/edit a user, sync a balance).
 
 ## 7. Updating
 

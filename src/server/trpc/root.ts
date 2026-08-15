@@ -1,12 +1,20 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { router, protectedProcedure } from "./middleware";
+import { adminProcedure, router, protectedProcedure } from "./middleware";
+import { USER_ROLES } from "@/db/schema";
+import {
+  createUserForAdmin,
+  listUsersForAdmin,
+  syncUserBalanceForAdmin,
+  updateUserForAdmin,
+} from "@/services/admin";
 import { executePayment, getPaymentStatus } from "@/services/payments";
 import { getRecipientPicker } from "@/services/recipients";
 import { getActiveShopBySlug, listActiveShops } from "@/services/shops";
 import { getWallet, syncBalanceFromChain } from "@/services/wallet";
 
 const amountSchema = z.bigint().positive();
+const roleSchema = z.enum(USER_ROLES);
 
 export const appRouter = router({
   wallet: router({
@@ -71,6 +79,49 @@ export const appRouter = router({
   }),
   shops: router({
     listActive: protectedProcedure.query(() => listActiveShops()),
+  }),
+  session: router({
+    role: protectedProcedure.query(({ ctx }) => ctx.user.role),
+  }),
+  admin: router({
+    users: router({
+      list: adminProcedure
+        .input(
+          z.object({
+            query: z.string().trim().max(64).optional(),
+            limit: z.number().int().min(1).max(100).default(50),
+            offset: z.number().int().min(0).default(0),
+          }),
+        )
+        .query(({ input }) => listUsersForAdmin(input)),
+      create: adminProcedure
+        .input(
+          z.object({
+            firstName: z.string().trim().min(1).max(100),
+            telegramId: z.string().trim().regex(/^\d+$/).max(32).optional(),
+            telegramUsername: z.string().trim().max(32).optional(),
+            phone: z.string().trim().max(32).optional(),
+            role: roleSchema,
+          }),
+        )
+        .mutation(({ input }) => createUserForAdmin(input)),
+      update: adminProcedure
+        .input(
+          z.object({
+            userId: z.string().min(1),
+            firstName: z.string().trim().min(1).max(100).optional(),
+            telegramUsername: z.string().trim().max(32).optional(),
+            phone: z.string().trim().max(32).nullable().optional(),
+            role: roleSchema.optional(),
+          }),
+        )
+        .mutation(({ ctx, input }) =>
+          updateUserForAdmin({ ...input, actorUserId: ctx.user.id }),
+        ),
+      syncBalance: adminProcedure
+        .input(z.object({ userId: z.string().min(1) }))
+        .mutation(({ input }) => syncUserBalanceForAdmin(input.userId)),
+    }),
   }),
 });
 

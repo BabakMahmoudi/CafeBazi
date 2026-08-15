@@ -25,7 +25,7 @@ Non-goals (for now): fiat payment gateway, SMS/carrier-based payments, non-Teleg
 |---|---|
 | Vercel serverless | Stateless handlers, cold starts, no long-lived processes. Neon HTTP driver, Drizzle over HTTP, cron via `vercel.json` |
 | Telegram MiniApp | `initData` is the identity layer; no new app install; bot configuration required |
-| Stellar | Custodial accounts; XLM base reserves; Horizon as the network interface; testnet-first |
+| Stellar | Custodial accounts; XLM base reserves; TAK is a SEP-41 Soroban token contract — payments/balances via Soroban RPC, Horizon for classic ops; testnet-first |
 | ~1,000 users | ~1,000 custodial accounts; XLM reserves must be budgeted; batch-friendly operations |
 | Custodial model | Server holds private keys encrypted at rest; all signing server-side |
 | Node runtime | `@stellar/stellar-sdk@16.2.0` requires **Node >= 22** — pin Node 22 on Vercel and locally |
@@ -64,7 +64,7 @@ Non-goals (for now): fiat payment gateway, SMS/carrier-based payments, non-Teleg
 |---|---|---|
 | `next` | 16.3.0 | App Router; serverless-friendly; React 19 |
 | `react` | 19 | Peer of Next 16 |
-| `@stellar/stellar-sdk` | 16.2.0 | ESM-first, bundles `@noble/ed25519` + `bignumber.js`; **requires Node >= 22** |
+| `@stellar/stellar-sdk` | 16.2.0 | ESM-first, bundles `@noble/ed25519` + `bignumber.js` + the Soroban RPC client and SEP-41 token contract support; **requires Node >= 22** |
 | `@tma.js/init-data-node` | 2.0.8 | Server-side initData validation. Successor of the deprecated `@telegram-apps/init-data-node` — do not use the deprecated package |
 | `@telegram-apps/sdk-react` | 3.3.9 | MiniApp client SDK (peer React 17/18/19) |
 | `@neondatabase/serverless` | 1.1.0 | HTTP driver for Neon; no persistent connections on serverless |
@@ -93,12 +93,14 @@ Runtime: **Node 22** everywhere — `"engines": { "node": ">=22" }` in `package.
 
 **Custody:** the server generates each account's keypair, funds it via `FUNDING`, encrypts the secret with AES-256-GCM under `KEY_ENCRYPTION_KEY`, and stores only the ciphertext + public key. All signing happens server-side; users never see private keys.
 
-**XLM reserves:** each custodial account needs the base reserve (~1 XLM) plus a small Soroban fee float (resource fees are burned per contract call); no trustlines are required because TAK is a Soroban token contract. Budget ~2,000 XLM to fund ~1,000 member accounts. This is a documented business cost.
+**XLM reserves:** each custodial account needs the base reserve (~1 XLM) plus a small Soroban fee float (resource fees are burned per contract call); no trustlines are required because TAK is a SEP-41 Soroban token contract. Budget ~2,000 XLM to fund ~1,000 member accounts. This is a documented business cost.
 
 ### 5.2 Asset
 
-- Code `TAK`; issuer = community treasury (`ISSUER`). No decimals. The code comes from Persian *tak* (تک, "single") — café slang for a single espresso shot.
-- **1 TAK = 1 cup of espresso** at any participating shop.
+- TAK is a **SEP-41 Soroban token contract** identified by `TAK_CONTRACT_ID` — not a classic trustline asset. Payments are SEP-41 `transfer(from, to, i128)` contract invocations submitted via Soroban RPC; balances are read from the contract's `("Balance", address)` data key. The classic trustline path (code `TAK`, issuer = community treasury `ISSUER`) is a fallback used only when `TAK_CONTRACT_ID` is unset.
+- On-chain amounts are `i128` scaled by `decimals = 7` (`TAK_DECIMALS = 10^7`); the app layer keeps **whole TAK as `bigint`** — no app-layer decimals anywhere. The scaling constant lives in `src/services/stellar.ts`; `src/services/wallet.ts` serializes `bigint` → `numeric` for Postgres via `takToNumeric`.
+- No trustlines; no on-chain memos (memos are stored in `transactions.memo` only).
+- **1 TAK = 1 cup of espresso** at any participating shop. The code comes from Persian *tak* (تک, "single") — café slang for a single espresso shot.
 - Supply control: mint on fiat top-up (admin), burn on redemption (shops → treasury). No arbitrary issuance.
 - On-chain balance is the source of truth; `balances` in Postgres is a denormalized cache.
 
@@ -156,7 +158,7 @@ Client            tRPC payments.create           Neon                  Stellar
    │<───────────────────│                          │                      │
 ```
 
-Steps: choose shop/cups (optionally pre-filled from a scanned QR, below) → server builds & signs a `member → shop` TAK contract `transfer` (simulate → assemble → submit via Soroban RPC) → insert a `transactions` row with unique `tx_hash` → confirm → client shows the "brewing" animation while pending.
+Steps: choose shop/cups (optionally pre-filled from a scanned QR, below) → server builds & signs a `member → shop` SEP-41 `transfer` (simulate → assemble → submit via Soroban RPC) → insert a `transactions` row with unique `tx_hash` → confirm → client shows the "brewing" animation while pending.
 
 **QR fast-pay:** each shop — and optionally each table — displays a static QR card encoding `https://t.me/<bot>?startapp=<payload>` (e.g. `s3` for shop 3, `s3t2` for shop 3 table 2; `start_param` is capped at 64 chars). The numeric id maps to `coffee_shops.slug` (`UNIQUE`). The customer scans it with the Telegram or OS camera (scanning happens *outside* the MiniApp — WebView camera access is unreliable); Telegram opens the bot and launches the MiniApp with `start_param` in `initDataUnsafe`. The app pre-selects the shop/table so the customer only taps the cup count and confirm. The server validates the payload against `coffee_shops` (`is_active`) before pre-filling; short-lived HMAC-signed one-time pay tokens (nonce + expiry, like game sessions in §7.6) are reserved for future table billing.
 
@@ -220,7 +222,7 @@ Client (MiniApp)      tRPC payments.send            Neon             Stellar
    │<────────────────────│                            │                 │
 ```
 
-Steps: pick a recipient — username search (Telegram usernames are globally unique) or the lazily-built `contacts` table — → server resolves the recipient in `users` (must be onboarded) → builds & signs a `member → member` TAK contract `transfer` → the exact lifecycle, idempotency, and reconciliation of §7.2 → the recipient sees the incoming cup with its `memo` in `wallet.get`. P2P payments are rate-limited and capped per user (see §10); the `memo` is a first-class fun surface (rotating Persian café-phrase presets + free text) — stored in `transactions.memo` only, since Soroban transactions do not support on-chain memos.
+Steps: pick a recipient — username search (Telegram usernames are globally unique) or the lazily-built `contacts` table — → server resolves the recipient in `users` (must be onboarded) → builds & signs a `member → member` SEP-41 `transfer` → the exact lifecycle, idempotency, and reconciliation of §7.2 → the recipient sees the incoming cup with its `memo` in `wallet.get`. P2P payments are rate-limited and capped per user (see §10); the `memo` is a first-class fun surface (rotating Persian café-phrase presets + free text) — stored in `transactions.memo` only, since Soroban transactions do not support on-chain memos.
 
 ### 7.9 Chat payments (pay-by-message)
 
@@ -251,6 +253,14 @@ Steps: verify the update (request signature against `TELEGRAM_BOT_TOKEN`; `updat
 
 **Future seam (§16):** keep the pipeline as *receive → normalize → intent → execute* with a clean boundary between **intent extraction** and **payment execution**. A later LLM layer may replace only the extract stage (natural-language pay-by-message); execute — recipient resolution, confirm keyboard, `payments.send` — stays deterministic.
 
+### 7.10 Admin console (user management)
+
+Admin-only page at `/admin` (`src/app/[locale]/admin/page.tsx`), backed by the `admin.users.*` tRPC procedures (§8.1) and a `session.role` query that drives the admin nav link. Every procedure runs behind `adminProcedure` (JWT + `role = admin` re-resolved from the DB on every request), and the page re-checks the session server-side before rendering (§10).
+
+- **List** (`admin.users.list`): returns users with name, `@username`, Stellar account address (`stellar_accounts.public_key`; `null` when the user has no account), and the cached `balances.amount`. On-chain is the source of truth; a per-user **sync from chain** (`admin.users.syncBalance` → `syncBalanceFromChain`) refreshes the cached row. The list reads cached rows only — no N×1 on-chain reads across the whole table. Search filters by `firstName` / `telegramUsername` (ILIKE); pagination is `offset`/`limit`.
+- **Add** (`admin.users.create`): inserts a `users` row, creates a custodial Stellar account via `ensureStellarAccount` (keypair + testnet funding; `pending_funding` on funding failure/mainnet until Phase 6), and ensures a zero `balances` row. `telegramId` is optional at create — when omitted the service stores a `manual-<uuid>` placeholder, so the user cannot sign in via Telegram but can hold/receive TAK.
+- **Edit** (`admin.users.update`): changes `firstName`, `telegramUsername`, `phone` (nullable to clear), and `role`. `telegramId` is immutable (set only at create). Guard rails: an admin cannot demote themselves, and the last remaining admin cannot be demoted.
+
 ## 8. API reference (tRPC procedures + plain Route Handlers)
 
 The internal API is a **tRPC router** (`src/server/trpc/root.ts`) mounted at `/api/trpc`. Client calls are type-inferred from `AppRouter`, so the tables below are the server-side contract. Every procedure is input-validated with a Zod schema and guarded by `protectedProcedure` (JWT session) or `adminProcedure` (JWT + `role = admin`); see §10.
@@ -266,6 +276,11 @@ The internal API is a **tRPC router** (`src/server/trpc/root.ts`) mounted at `/a
 | `payments.send` | mutation | JWT (member) | Peer-to-peer TAK payment: resolve recipient (username/contacts), build, sign, submit |
 | `payments.recipients` | query | JWT | Recipient picker: `contacts` recents + username search over `users` |
 | `shops.listActive` | query | JWT | List active shops for the member payment flow (QR prefill fallback) |
+| `session.role` | query | JWT | Current user's role (drives the admin nav link) |
+| `admin.users.list` | query | admin | List users with name, Stellar address, and cached TAK balance; search + pagination (§7.10) |
+| `admin.users.create` | mutation | admin | Add a user (row + custodial Stellar account + zero `balances` row) (§7.10) |
+| `admin.users.update` | mutation | admin | Edit user (`firstName`, `telegramUsername`, `phone`, `role`; `telegramId` immutable) (§7.10) |
+| `admin.users.syncBalance` | mutation | admin | Refresh one user's cached balance from the on-chain TAK balance (§7.10) |
 | `games.session` | mutation | JWT | Request HMAC-signed game session |
 | `games.score` | mutation | JWT + session | Submit score for verification |
 | `lottery.enter` | mutation | JWT (member) | Enter weekly lottery |
@@ -274,6 +289,8 @@ The internal API is a **tRPC router** (`src/server/trpc/root.ts`) mounted at `/a
 | `admin.redemptions.create` | mutation | admin | Record shop redemption + bean dispatch |
 | `admin.shops.list` / `admin.shops.create` / `admin.shops.update` | query/mutation | admin | Manage coffee shops |
 | `admin.inventory.get` / `admin.inventory.set` | query/mutation | admin | Manage bean inventory |
+
+`admin.users.*` and `session.role` are the first implemented `admin.*` procedures (see §7.10); `admin.coins.*`, `admin.shops.*`, and `admin.inventory.*` remain roadmap work.
 
 ### 8.2 Plain Route Handlers (external entry points)
 
@@ -301,7 +318,11 @@ cafe-bazi/
 │  │  │  ├─ cron/lottery/route.ts  # plain handler: weekly draw (§8.2)
 │  │  │  └─ health/route.ts        # public liveness probe (§8.2)
 │  │  └─ [locale]/                 # i18n pages; fa default, RTL
-│  ├─ components/        # UI components (tRPC React Query hooks)
+│  │     ├─ admin/page.tsx         # admin console: user management (§7.10)
+│  │     ├─ buy/page.tsx           # coffee purchase (§7.2)
+│  │     ├─ send/page.tsx          # P2P gifting (§7.8)
+│  │     └─ qr/[shopSlug]/page.tsx # shop/table QR card (§7.2)
+│  ├─ components/        # UI components (tRPC React Query hooks); components/admin/ = admin console (§7.10)
 │  ├─ db/
 │  │  ├─ schema.ts       # Drizzle schema (§6)
 │  │  └─ index.ts        # client (server-only)
@@ -319,10 +340,11 @@ cafe-bazi/
 
 - **Auth:** initData HMAC-validated server-side with `@tma.js/init-data-node` using `TELEGRAM_BOT_TOKEN`; never trust client-side `window.Telegram.WebApp.initData` alone. Session = signed JWT in an httpOnly cookie, resolved once into the tRPC context; `protectedProcedure` / `adminProcedure` middleware enforce membership and `role = admin` on every procedure. Plain handlers (§8.2) re-check the cookie or `CRON_SECRET` directly.
 - **Custody:** private keys encrypted with AES-256-GCM; master key in `KEY_ENCRYPTION_KEY` (Vercel env, never committed). No private material in client bundles.
-- **Idempotency:** payment code relies on the DB unique `transactions.tx_hash` and the status machine `pending → submitted → confirmed | failed`; a reconciliation job resolves stuck `submitted` rows against Soroban RPC (with Horizon fallback for classic transactions).
+- **Idempotency:** payment code relies on the DB unique `transactions.tx_hash` and the status machine `pending → submitted → confirmed | failed`; a reconciliation job resolves stuck `submitted` rows against Soroban RPC (SEP-41 contract mode; Horizon fallback for classic transactions).
 - **Isolation:** Stellar and DB modules are `server-only`; route handlers stay light.
 - **Anti-cheat:** HMAC-signed game sessions with TTL, per-user rate limits, server-side score bounds, nonce reuse rejection.
 - **P2P & chat payments:** recipient resolution is server-side only (`telegram_username`, `telegram_id`, `forward_from`) — never trust a client-supplied recipient ID; the bot webhook validates the update signature against `TELEGRAM_BOT_TOKEN` on every request; chat payments require an inline confirm keyboard showing recipient + amount before signing; per-user send caps and rate limits (incl. new-account limits); `phone` is stored only after explicit one-time `requestContact` consent.
+- **Admin console:** `/admin` re-checks the JWT session cookie and the DB role server-side before rendering (§7.10); every admin data access goes through `adminProcedure`, which re-reads the user's role from the DB on each request — a demotion takes effect on the next request. Non-admin sessions are redirected to `/`.
 - **AI/LLM boundary (future, §16):** LLM-extracted intents are *proposals only* — re-validated by Zod schemas and the confirm-before-pay keyboard before any money movement; prompt inputs are sanitized/redacted before any provider call; the LLM never selects Stellar accounts or executes payments.
 - **Secrets:** no secrets in client bundles; `*.env*` gitignored.
 
@@ -353,12 +375,13 @@ cafe-bazi/
 |---|---|---|
 | `DATABASE_URL` | server | Neon Postgres connection string |
 | `TELEGRAM_BOT_TOKEN` | server | Bot token for initData HMAC validation + webhook secret-token mode |
+| `WEBHOOK_SECRET_TOKEN` | server | Random secret for the bot webhook `secret_token` guard (optional; must be A-Z, a-z, 0-9, `_`, `-`) |
 | `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | both | Public bot username (no `@`) for QR `startapp` deep links |
 | `KEY_ENCRYPTION_KEY` | server | AES-256-GCM master key for Stellar secrets |
 | `STELLAR_NETWORK` | server | `testnet` (default) or `mainnet` |
 | `HORIZON_URL` | server | Horizon endpoint for the active network |
-| `SOROBAN_RPC_URL` | server | Soroban RPC endpoint used to read the TAK token contract balance |
-| `TAK_CONTRACT_ID` | server | TAK Soroban token contract address; when set, on-chain balances are read from the contract (`Balance` data key) instead of classic trustlines |
+| `SOROBAN_RPC_URL` | server | Soroban RPC endpoint used to invoke/read the TAK SEP-41 token contract (defaults to testnet) |
+| `TAK_CONTRACT_ID` | server | TAK SEP-41 Soroban token contract address; setting it activates contract mode (SEP-41 `transfer` payments + `("Balance", address)` balance reads); unset → classic trustline fallback |
 | `TAK_ISSUER_PUBLIC_KEY` | server | TAK issuer public key (from `scripts/setup-testnet.ts`) |
 | `CRON_SECRET` | server | Bearer secret guarding `/api/cron/lottery` |
 | `JWT_SECRET` | server | JWT signing secret for the MiniApp session cookie (httpOnly) |
