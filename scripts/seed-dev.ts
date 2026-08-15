@@ -5,7 +5,7 @@ dotenv.config({ path: existsSync(".env.local") ? ".env.local" : ".env" });
 import { db } from "@/db";
 import { coffeeShops, users } from "@/db/schema";
 
-const ADMIN_TELEGRAM_ID = process.env.SEED_ADMIN_TELEGRAM_ID ?? "0";
+const ADMIN_TELEGRAM_ID = "6494982678";// process.env.SEED_ADMIN_TELEGRAM_ID ?? "6494982678";
 
 async function main() {
   const [admin] = await db
