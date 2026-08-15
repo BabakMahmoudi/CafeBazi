@@ -8,6 +8,7 @@ process.env.HORIZON_URL = "https://horizon-testnet.stellar.org";
 process.env.TAK_ISSUER_PUBLIC_KEY =
   process.env.TAK_ISSUER_PUBLIC_KEY ?? "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 process.env.CRON_SECRET = process.env.CRON_SECRET ?? "test-cron-secret";
+process.env.WEBHOOK_SECRET_TOKEN = process.env.WEBHOOK_SECRET_TOKEN ?? "test-webhook-secret";
 process.env.NEXT_PUBLIC_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME =
   process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "cafe_bazi_test_bot";

@@ -6,9 +6,9 @@ import { setWebhook } from "@/lib/telegram-api";
 
 async function main() {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL;
-  const secret = process.env.TELEGRAM_BOT_TOKEN;
+  const secret = process.env.WEBHOOK_SECRET_TOKEN;
   if (!baseUrl || !secret) {
-    throw new Error("NEXT_PUBLIC_APP_URL and TELEGRAM_BOT_TOKEN are required");
+    throw new Error("NEXT_PUBLIC_APP_URL and WEBHOOK_SECRET_TOKEN are required");
   }
 
   const url = `${baseUrl.replace(/\/$/, "")}/api/bot/webhook`;

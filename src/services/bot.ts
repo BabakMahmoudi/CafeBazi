@@ -1,6 +1,7 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
 import faMessages from "../../messages/fa.json";
+import { env } from "@/lib/env";
 import { executePayment, PaymentError } from "@/services/payments";
 import { getUserByTelegramId, getUserByUsername } from "@/services/users";
 import {
@@ -79,12 +80,8 @@ const botMessages = faMessages.bot as {
 };
 
 export function verifyWebhookSecret(req: Request): boolean {
-
-  // 8976771980_qyeJCA5GjYOqmSys0Bc
-
-  return true;
   const token = req.headers.get(WEBHOOK_SECRET_HEADER);
-  const expected = process.env.TELEGRAM_BOT_TOKEN;
+  const expected = env.WEBHOOK_SECRET_TOKEN;
   return Boolean(expected && token && token === expected);
 }
 
@@ -207,9 +204,9 @@ async function handleMessage(message: TgMessage): Promise<void> {
   if (!message.from) {
     return;
   }
-  await sendMessage({ chatId, text: botMessages.unknownRecipient });
   const intent = extractPaymentIntent(message);
   if (!intent) {
+    await sendMessage({ chatId, text: botMessages.unknownRecipient });
     return;
   }
 

@@ -11,6 +11,7 @@ const envSchema = z.object({
     .default("https://horizon-testnet.stellar.org"),
   TAK_ISSUER_PUBLIC_KEY: z.string().min(1, "TAK_ISSUER_PUBLIC_KEY is required"),
   CRON_SECRET: z.string().default(""),
+  WEBHOOK_SECRET_TOKEN: z.string().default(""),
   JWT_SECRET: z.string().min(1, "JWT_SECRET is required"),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
   NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: z.string().min(1, "NEXT_PUBLIC_TELEGRAM_BOT_USERNAME is required"),

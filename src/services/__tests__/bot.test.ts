@@ -83,7 +83,7 @@ describe("bot service", () => {
     it("accepts the matching secret-token header", () => {
       const req = new Request("https://example.test/api/bot/webhook", {
         method: "POST",
-        headers: { "x-telegram-bot-api-secret-token": process.env.TELEGRAM_BOT_TOKEN ?? "" },
+        headers: { "x-telegram-bot-api-secret-token": process.env.WEBHOOK_SECRET_TOKEN ?? "" },
       });
       expect(verifyWebhookSecret(req)).toBe(true);
     });
