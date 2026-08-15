@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build && npm run db:seed",
+    "build": "next build && npm run bot:setwebhook",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
