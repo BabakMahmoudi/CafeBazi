@@ -3,6 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { balances, transactions } from "@/db/schema";
 import { takFromNumeric } from "@/lib/money";
+import { getStellarAccountByUserId } from "@/services/users";
 
 export async function getCachedBalance(userId: string): Promise<bigint> {
   const rows = await db.select().from(balances).where(eq(balances.userId, userId)).limit(1);
@@ -10,7 +11,7 @@ export async function getCachedBalance(userId: string): Promise<bigint> {
 }
 
 export async function getWallet(userId: string) {
-  const [balance, history] = await Promise.all([
+  const [balance, history, stellarAccount] = await Promise.all([
     getCachedBalance(userId),
     db
       .select()
@@ -18,10 +19,12 @@ export async function getWallet(userId: string) {
       .where(eq(transactions.userId, userId))
       .orderBy(desc(transactions.createdAt))
       .limit(50),
+    getStellarAccountByUserId(userId),
   ]);
 
   return {
     balance,
+    stellarAccountId: stellarAccount?.publicKey ?? null,
     transactions: history.map((tx) => ({
       id: tx.id,
       txHash: tx.txHash,

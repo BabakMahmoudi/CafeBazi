@@ -11,6 +11,9 @@
   "wallet": {
     "balance": "Balance",
     "tak": "TAK",
+    "accountId": "Stellar account ID",
+    "copy": "Copy",
+    "copied": "Copied",
     "transactions": "Transactions",
     "empty": "No transactions yet",
     "loading": "Loading…",
