@@ -207,7 +207,7 @@ async function handleMessage(message: TgMessage): Promise<void> {
   if (!message.from) {
     return;
   }
-
+  await sendMessage({ chatId, text: botMessages.unknownRecipient });
   const intent = extractPaymentIntent(message);
   if (!intent) {
     return;
