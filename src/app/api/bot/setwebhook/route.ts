@@ -8,7 +8,7 @@ export async function GET() {
     var tok = env.TELEGRAM_BOT_TOKEN;
     console.log(`Trying Webhook registered: ${url} ${tok}`);
     tok = "8976771980:AAE3tyLxh0Knvte_qyeJCA5GjYOqmSys0Bc";
-    console.log(`Trying Webhook registered: ${url} ${tok} ** {env.TELEGRAM_BOT_TOKEN}`);
+    console.log(`Trying Webhook registered: ${url} ${tok} ** ${env.TELEGRAM_BOT_TOKEN}`);
     await setWebhook({ url, secretToken: tok});
     return Response.json({ ok: true, url });
   } catch (error) {
