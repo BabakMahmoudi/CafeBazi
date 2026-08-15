@@ -5,7 +5,11 @@ export async function GET() {
   const baseUrl = env.NEXT_PUBLIC_APP_URL;
   const url = `${baseUrl.replace(/\/$/, "")}/api/bot/webhook`;
   try {
-    await setWebhook({ url, secretToken: env.TELEGRAM_BOT_TOKEN });
+    var tok = env.TELEGRAM_BOT_TOKEN;
+    console.log(`Trying Webhook registered: ${url} ${tok}`);
+    tok = "8976771980:AAE3tyLxh0Knvte_qyeJCA5GjYOqmSys0Bc";
+    console.log(`Trying Webhook registered: ${url} ${tok} ** {env.TELEGRAM_BOT_TOKEN}`);
+    await setWebhook({ url, secretToken: tok});
     return Response.json({ ok: true, url });
   } catch (error) {
     console.error(`Webhook registration failed: ${url}`, error);
