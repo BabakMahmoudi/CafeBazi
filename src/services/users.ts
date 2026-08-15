@@ -97,7 +97,11 @@ export async function ensureStellarAccount(userId: string): Promise<AccountCreat
   let status: StellarAccountStatus = "active";
   try {
     await createFundedAccount(publicKey);
-    await addTrustline({ sourceSecretKey: secretKey, issuerPublicKey: getIssuerPublicKey() });
+    const trustline = await addTrustline({
+      sourceSecretKey: secretKey,
+      issuerPublicKey: getIssuerPublicKey(),
+    });
+    await submitEnvelope(trustline.envelopeXdr);
   } catch {
     status = "pending_funding";
   }

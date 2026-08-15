@@ -35,7 +35,12 @@ export async function createFundedAccount(publicKey: string): Promise<void> {
   }
   const s = await sdk();
   const server = new s.Horizon.Server(env.HORIZON_URL);
-  await server.friendbot(publicKey).call();
+  try {
+    await server.loadAccount(publicKey);
+    return;
+  } catch {
+    await server.friendbot(publicKey).call();
+  }
 }
 
 export type SignedPayment = {
