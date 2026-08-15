@@ -118,6 +118,28 @@ export async function addTrustline(input: {
   };
 }
 
+export async function ensureTakTrustline(sourceSecretKey: string): Promise<boolean> {
+  const s = await sdk();
+  const source = s.Keypair.fromSecret(sourceSecretKey);
+  const server = new s.Horizon.Server(env.HORIZON_URL);
+  const account = await server.loadAccount(source.publicKey());
+  const hasTrustline = account.balances.some(
+    (entry) =>
+      "asset_code" in entry &&
+      entry.asset_code === TAK_ASSET_CODE &&
+      entry.asset_issuer === getIssuerPublicKey(),
+  );
+  if (hasTrustline) {
+    return false;
+  }
+  const trustline = await addTrustline({
+    sourceSecretKey,
+    issuerPublicKey: getIssuerPublicKey(),
+  });
+  await submitEnvelope(trustline.envelopeXdr);
+  return true;
+}
+
 export async function submitEnvelope(envelopeXdr: string): Promise<string> {
   const s = await sdk();
   const server = new s.Horizon.Server(env.HORIZON_URL);

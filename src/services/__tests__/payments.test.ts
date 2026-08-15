@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
     generateKeypair: vi.fn(),
     createFundedAccount: vi.fn(),
     addTrustline: vi.fn(),
+    ensureTakTrustline: vi.fn(async () => false),
     getNetworkPassphrase: vi.fn(async () => "Test SDF Network ; September 2015"),
   },
 }));
@@ -95,6 +96,30 @@ describe("payments service", () => {
 
     expect(h.stellar.buildSignedPayment).toHaveBeenCalledTimes(1);
     expect(h.stellar.submitEnvelope).toHaveBeenCalledTimes(1);
+  });
+
+  it("repairs the shop trustline before a purchase", async () => {
+    await executePayment({
+      userId: "sender",
+      shopId: "shop1",
+      amount: 1n,
+      type: "purchase",
+      source: "miniapp",
+    });
+
+    expect(h.stellar.ensureTakTrustline).toHaveBeenCalledWith(SECRET);
+  });
+
+  it("repairs the recipient trustline before a p2p send", async () => {
+    await executePayment({
+      userId: "sender",
+      recipientUserId: "recipient",
+      amount: 1n,
+      type: "p2p",
+      source: "miniapp",
+    });
+
+    expect(h.stellar.ensureTakTrustline).toHaveBeenCalledWith(SECRET);
   });
 
   it("rejects a payment when the cached balance is insufficient", async () => {
