@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import { init, isTMA, mockTelegramEnv } from "@telegram-apps/sdk-react";
 
+export const telegramMockState = { mocked: false };
+
 function mockLaunchEnvironment() {
   mockTelegramEnv({
     launchParams: {
@@ -22,6 +24,7 @@ function mockLaunchEnvironment() {
         "user=%7B%22id%22%3A777000%2C%22first_name%22%3A%22Developer%22%2C%22last_name%22%3A%22%22%2C%22username%22%3A%22dev%22%2C%22language_code%22%3A%22fa%22%7D&auth_date=0&hash=dev-mock",
     },
   });
+  telegramMockState.mocked = true;
 }
 
 export function TelegramProvider({ children }: { children: React.ReactNode }) {

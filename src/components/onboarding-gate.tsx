@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { retrieveRawInitData } from "@telegram-apps/sdk-react";
 import { trpc } from "@/lib/trpc/client";
 import { Link } from "@/i18n/navigation";
+import { telegramMockState } from "./telegram-provider";
 import { BalanceCard } from "./balance-card";
 import { TransactionsList } from "./transactions-list";
 
@@ -14,6 +15,8 @@ export function OnboardingGate() {
   const t = useTranslations();
   const wallet = trpc.wallet.get.useQuery(undefined, { retry: false });
   const [pendingFunding, setPendingFunding] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const code = (wallet.error?.data as { code?: string } | undefined)?.code;
   const state: AuthState = wallet.isLoading
@@ -25,26 +28,48 @@ export function OnboardingGate() {
         : "ready";
 
   async function startOnboarding() {
-    let initData = "";
+    setAuthError(null);
+    setSubmitting(true);
     try {
-      initData = retrieveRawInitData() ?? "";
-    } catch {
-      return;
-    }
-    if (!initData) return;
+      let initData: string | undefined;
+      try {
+        initData = retrieveRawInitData();
+      } catch {
+        initData = undefined;
+      }
+      if (!initData || telegramMockState.mocked) {
+        setAuthError(t("onboarding.openInTelegram"));
+        return;
+      }
 
-    const res = await fetch("/api/auth/tma", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ initData }),
-    });
-    const body = (await res.json()) as {
-      ok?: boolean;
-      accountStatus?: string;
-    };
-    if (res.ok && body.ok) {
+      let res: Response;
+      try {
+        res = await fetch("/api/auth/tma", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ initData }),
+        });
+      } catch {
+        setAuthError(t("onboarding.authFailed"));
+        return;
+      }
+
+      let body: { ok?: boolean; accountStatus?: string } | null = null;
+      try {
+        body = (await res.json()) as { ok?: boolean; accountStatus?: string };
+      } catch {
+        body = null;
+      }
+
+      if (!res.ok || !body?.ok) {
+        setAuthError(t("onboarding.authFailed"));
+        return;
+      }
+
       setPendingFunding(body.accountStatus === "pending_funding");
-      wallet.refetch();
+      await wallet.refetch();
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -60,11 +85,16 @@ export function OnboardingGate() {
         {pendingFunding && (
           <p className="text-sm text-amber-700">{t("onboarding.pendingFunding")}</p>
         )}
+        {authError && (
+          <p className="rounded-xl bg-red-100 p-3 text-sm text-red-900">{authError}</p>
+        )}
         <button
+          type="button"
           onClick={startOnboarding}
-          className="rounded-xl bg-accent px-4 py-3 font-semibold text-white"
+          disabled={submitting}
+          className="rounded-xl bg-accent px-4 py-3 font-semibold text-white disabled:opacity-40"
         >
-          {t("onboarding.button")}
+          {submitting ? t("onboarding.loading") : t("onboarding.button")}
         </button>
       </div>
     );

@@ -30,7 +30,10 @@
     "title": "Welcome to Cafe Bazi",
     "hint": "Your Stellar wallet is created right now.",
     "button": "Get started",
-    "pendingFunding": "Your account is being funded; try again shortly."
+    "loading": "Please wait…",
+    "pendingFunding": "Your account is being funded; try again shortly.",
+    "openInTelegram": "Open this app inside Telegram to create your wallet.",
+    "authFailed": "Could not sign you in. Please try again."
   },
   "buy": {
     "title": "Buy coffee",
