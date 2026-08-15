@@ -12,6 +12,7 @@ async function main() {
   }
 
   const url = `${baseUrl.replace(/\/$/, "")}/api/bot/webhook`;
+  console.log(`Trying Webhook registered: ${url}`);
   await setWebhook({ url, secretToken: secret });
   console.log(`Webhook registered: ${url}`);
   process.exit(0);
