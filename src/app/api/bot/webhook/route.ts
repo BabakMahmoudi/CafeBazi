@@ -1,6 +1,7 @@
 import { handleUpdate, verifyWebhookSecret, type TgUpdate } from "@/services/bot";
 
 export async function POST(req: Request) {
+  return Response.json({ ok: true });
   if (!verifyWebhookSecret(req)) {
     return Response.json({ ok: false }, { status: 403 });
   }
