@@ -3,13 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { stellarAccounts, users, type StellarAccountStatus } from "@/db/schema";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
-import {
-  addTrustline,
-  createFundedAccount,
-  generateKeypair,
-  getIssuerPublicKey,
-  submitEnvelope,
-} from "@/services/stellar";
+import { createFundedAccount, generateKeypair } from "@/services/stellar";
 
 export type TelegramUserInput = {
   id: number;
@@ -97,11 +91,6 @@ export async function ensureStellarAccount(userId: string): Promise<AccountCreat
   let status: StellarAccountStatus = "active";
   try {
     await createFundedAccount(publicKey);
-    const trustline = await addTrustline({
-      sourceSecretKey: secretKey,
-      issuerPublicKey: getIssuerPublicKey(),
-    });
-    await submitEnvelope(trustline.envelopeXdr);
   } catch {
     status = "pending_funding";
   }
@@ -130,15 +119,9 @@ export async function retryAccountFunding(userId: string): Promise<AccountCreati
     return { status: existing[0].status, publicKey: existing[0].publicKey };
   }
 
-  const secretKey = decryptSecret(existing[0].encryptedSecret);
   let updatedStatus: StellarAccountStatus = "active";
   try {
     await createFundedAccount(existing[0].publicKey);
-    const trustline = await addTrustline({
-      sourceSecretKey: secretKey,
-      issuerPublicKey: getIssuerPublicKey(),
-    });
-    await submitEnvelope(trustline.envelopeXdr);
   } catch {
     updatedStatus = "pending_funding";
   }

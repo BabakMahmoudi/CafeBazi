@@ -11,11 +11,11 @@ I'm in **Ask mode (read-only)** — I cannot create or modify files in the repos
 
 ## 0. Known blockers — fix before deploying (all in the codebase today)
 
-1. **Trustline is never submitted at onboarding**
-   `src/services/users.ts` → `ensureStellarAccount()` calls `addTrustline(...)` but
-   discards the signed envelope and never calls `submitEnvelope()`. New accounts are
-   marked `active` without a TAK trustline, so every TAK payment fails with `op_no_trust`.
-   Fix: `await submitEnvelope(trustline.envelopeXdr)` like `retryAccountFunding()` already does.
+1. **No TAK contract config in env**
+   On-chain balances and payments now go through the TAK Soroban token contract. Set
+   `TAK_CONTRACT_ID` (and `SOROBAN_RPC_URL` if not testnet) in `.env.local` / Vercel env;
+   without it the app falls back to classic trustline payments, which will fail unless
+   trustlines exist. Trustlines are no longer created at onboarding.
 
 2. **Seeded shops have no merchant Stellar account**
    `scripts/seed-dev.ts` creates an admin user + shops but no `stellar_accounts` row for the
@@ -27,8 +27,8 @@ I'm in **Ask mode (read-only)** — I cannot create or modify files in the repos
    `admin.coins.mint` / `admin.coins.topUp` (documented in ARCHITECTURE.md §8.1) are not
    implemented. Users can never acquire a TAK balance through the app, and the `FUNDING`
    secret lives only in the local `.env.testnet.json` — not on the server. For a testnet
-   pilot you must manually send TAK from `FUNDING` to user accounts via Horizon until a
-   mint path exists.
+   pilot you must manually transfer TAK from the token contract (or `FUNDING`) to user
+   accounts until a mint path exists.
 
 4. **Mainnet funding is not implemented**
    `createFundedAccount()` is testnet-only (Friendbot). On mainnet, onboarding lands in
@@ -114,6 +114,8 @@ because `src/lib/env.ts` validates at module load:
 | `TELEGRAM_BOT_TOKEN` | yes | initData HMAC + webhook secret-token |
 | `KEY_ENCRYPTION_KEY` | yes | AES-256-GCM master key (base64, 32 bytes) |
 | `TAK_ISSUER_PUBLIC_KEY` | yes | from `pnpm db:testnet` |
+| `TAK_CONTRACT_ID` | yes | TAK Soroban token contract (balances read from the contract) |
+| `SOROBAN_RPC_URL` | dev | defaults to testnet Soroban RPC |
 | `JWT_SECRET` | yes | MiniApp session cookie signing |
 | `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | yes | bot username without `@` (QR deep links) |
 | `NEXT_PUBLIC_APP_URL` | yes | `https://<your-domain>.vercel.app` (webhook + QR) |
@@ -152,10 +154,10 @@ Registers `POST https://<your-domain>/api/bot/webhook` with secret-token mode
 
 1. `GET https://<your-domain>/api/health` → `{ "ok": true, ... }`
 2. Open the bot's WebApp in Telegram → onboarding → confirm a `stellar_accounts` row is
-   created with status `active` **and the TAK trustline exists on-chain** (blocker #1).
-3. Buy-flow smoke test: since there is no mint path (blocker #3), manually send TAK from
-   `FUNDING` to a test user's public key via Horizon, then complete a purchase and check
-   the shop balance + audit log.
+   created with status `active`.
+3. Buy-flow smoke test: since there is no mint path (blocker #3), manually transfer TAK to
+   a test user via the token contract, then complete a purchase and check the shop balance
+   + audit log.
 4. Forward a friend's message into the bot DM and confirm the inline keyboard flow.
 
 ## 7. Updating

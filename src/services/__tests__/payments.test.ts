@@ -13,8 +13,6 @@ const h = vi.hoisted(() => ({
     getIssuerPublicKey: vi.fn(() => "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
     generateKeypair: vi.fn(),
     createFundedAccount: vi.fn(),
-    addTrustline: vi.fn(),
-    ensureTakTrustline: vi.fn(async () => false),
     getNetworkPassphrase: vi.fn(async () => "Test SDF Network ; September 2015"),
   },
 }));
@@ -98,19 +96,24 @@ describe("payments service", () => {
     expect(h.stellar.submitEnvelope).toHaveBeenCalledTimes(1);
   });
 
-  it("repairs the shop trustline before a purchase", async () => {
+  it("signs a contract transfer to the shop's account without a trustline", async () => {
     await executePayment({
       userId: "sender",
       shopId: "shop1",
-      amount: 1n,
+      amount: 2n,
       type: "purchase",
       source: "miniapp",
     });
 
-    expect(h.stellar.ensureTakTrustline).toHaveBeenCalledWith(SECRET);
+    expect(h.stellar.buildSignedPayment).toHaveBeenCalledWith({
+      sourceSecretKey: SECRET,
+      destination: "GA-MERCHANT",
+      amount: "2",
+      memo: undefined,
+    });
   });
 
-  it("repairs the recipient trustline before a p2p send", async () => {
+  it("signs a contract transfer to the recipient without a trustline", async () => {
     await executePayment({
       userId: "sender",
       recipientUserId: "recipient",
@@ -119,7 +122,12 @@ describe("payments service", () => {
       source: "miniapp",
     });
 
-    expect(h.stellar.ensureTakTrustline).toHaveBeenCalledWith(SECRET);
+    expect(h.stellar.buildSignedPayment).toHaveBeenCalledWith({
+      sourceSecretKey: SECRET,
+      destination: "GA-RECIPIENT",
+      amount: "1",
+      memo: undefined,
+    });
   });
 
   it("rejects a payment when the cached balance is insufficient", async () => {

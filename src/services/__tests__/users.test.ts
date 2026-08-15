@@ -8,9 +8,6 @@ const h = vi.hoisted(() => ({
   stellar: {
     generateKeypair: vi.fn(async () => ({ publicKey: "GA-NEW", secretKey: "SA-NEW" })),
     createFundedAccount: vi.fn(async () => undefined),
-    addTrustline: vi.fn(async () => ({ envelopeXdr: "AAAA-TRUSTLINE", txHash: "trustline-hash" })),
-    submitEnvelope: vi.fn(async () => "trustline-hash"),
-    getIssuerPublicKey: vi.fn(() => "G-ISSUER"),
   },
 }));
 
@@ -32,16 +29,11 @@ describe("users service — Stellar account onboarding", () => {
     h.db = seedDb();
   });
 
-  it("funds the account and submits the signed TAK trustline before marking it active", async () => {
+  it("funds the account and marks it active", async () => {
     const result = await ensureStellarAccount("u1");
 
     expect(result.status).toBe("active");
     expect(h.stellar.createFundedAccount).toHaveBeenCalledWith("GA-NEW");
-    expect(h.stellar.addTrustline).toHaveBeenCalledWith({
-      sourceSecretKey: "SA-NEW",
-      issuerPublicKey: "G-ISSUER",
-    });
-    expect(h.stellar.submitEnvelope).toHaveBeenCalledWith("AAAA-TRUSTLINE");
     expect(h.db.tables().stellar_accounts[0]).toMatchObject({
       userId: "u1",
       publicKey: "GA-NEW",
@@ -49,8 +41,8 @@ describe("users service — Stellar account onboarding", () => {
     });
   });
 
-  it("stores the account as pending_funding when the trustline cannot be submitted", async () => {
-    h.stellar.submitEnvelope.mockRejectedValueOnce(new Error("horizon down"));
+  it("stores the account as pending_funding when funding fails", async () => {
+    h.stellar.createFundedAccount.mockRejectedValueOnce(new Error("friendbot down"));
 
     const result = await ensureStellarAccount("u1");
 
@@ -62,7 +54,7 @@ describe("users service — Stellar account onboarding", () => {
     });
   });
 
-  it("re-submits the trustline when retrying a pending_funding account", async () => {
+  it("re-funds a pending_funding account on retry", async () => {
     h.db = seedDb({
       stellarAccounts: [
         {
@@ -79,11 +71,6 @@ describe("users service — Stellar account onboarding", () => {
 
     expect(result.status).toBe("active");
     expect(h.stellar.createFundedAccount).toHaveBeenCalledWith("GA-OLD");
-    expect(h.stellar.addTrustline).toHaveBeenCalledWith({
-      sourceSecretKey: SA_OLD,
-      issuerPublicKey: "G-ISSUER",
-    });
-    expect(h.stellar.submitEnvelope).toHaveBeenCalledWith("AAAA-TRUSTLINE");
     expect(h.db.tables().stellar_accounts[0].status).toBe("active");
   });
 
@@ -103,7 +90,6 @@ describe("users service — Stellar account onboarding", () => {
     const result = await retryAccountFunding("u1");
 
     expect(result.status).toBe("active");
-    expect(h.stellar.addTrustline).not.toHaveBeenCalled();
-    expect(h.stellar.submitEnvelope).not.toHaveBeenCalled();
+    expect(h.stellar.createFundedAccount).not.toHaveBeenCalled();
   });
 });

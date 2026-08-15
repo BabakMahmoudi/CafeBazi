@@ -9,6 +9,11 @@ const envSchema = z.object({
     .string()
     .url()
     .default("https://horizon-testnet.stellar.org"),
+  SOROBAN_RPC_URL: z
+    .string()
+    .url()
+    .default("https://soroban-testnet.stellar.org"),
+  TAK_CONTRACT_ID: z.string().default(""),
   TAK_ISSUER_PUBLIC_KEY: z.string().min(1, "TAK_ISSUER_PUBLIC_KEY is required"),
   CRON_SECRET: z.string().default(""),
   WEBHOOK_SECRET_TOKEN: z.string().default(""),

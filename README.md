@@ -80,6 +80,8 @@ pnpm bot:setwebhook   # registers ${NEXT_PUBLIC_APP_URL}/api/bot/webhook with se
 | `KEY_ENCRYPTION_KEY` | yes | AES-256-GCM master key for Stellar secrets (server-only). Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
 | `STELLAR_NETWORK` | dev | `testnet` (default) or `mainnet` |
 | `HORIZON_URL` | dev | Horizon endpoint for the active network |
+| `SOROBAN_RPC_URL` | dev | Soroban RPC endpoint (defaults to testnet) |
+| `TAK_CONTRACT_ID` | yes* | TAK Soroban token contract; on-chain balance is read from the contract when set |
 | `TAK_ISSUER_PUBLIC_KEY` | yes* | TAK issuer public key (from `pnpm db:testnet`) (server-only) |
 | `CRON_SECRET` | prod | Bearer secret guarding `/api/cron/lottery` (server-only) |
 | `JWT_SECRET` | yes | JWT signing secret for the MiniApp session cookie (server-only). Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` |

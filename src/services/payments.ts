@@ -12,7 +12,7 @@ import {
   type TransactionType,
 } from "@/db/schema";
 import { takFromNumeric, takToNumeric } from "@/lib/money";
-import { buildSignedPayment, ensureTakTrustline, getAccountBalance, getTransactionStatus, submitEnvelope } from "@/services/stellar";
+import { buildSignedPayment, getAccountBalance, getTransactionStatus, submitEnvelope } from "@/services/stellar";
 import { getStellarAccountSecret } from "@/services/users";
 
 export const DAILY_SEND_CAP = 50n;
@@ -200,7 +200,6 @@ async function executePaymentUnlocked(
 
   let recipientUserId: string | undefined;
   let destinationPublicKey: string;
-  let destinationSecretKey: string;
   let shop: (typeof coffeeShops.$inferSelect) | null = null;
   let shopId: string | null | undefined = input.shopId;
 
@@ -216,7 +215,6 @@ async function executePaymentUnlocked(
     }
     const shopOwner = await getStellarAccountSecret(shop.merchantId);
     destinationPublicKey = shopOwner.publicKey;
-    destinationSecretKey = shopOwner.secretKey;
     shopId = shop.id;
   } else if (input.recipientUserId) {
     const recipients = await db
@@ -232,7 +230,6 @@ async function executePaymentUnlocked(
     }
     const recipientAccount = await getStellarAccountSecret(recipients[0].id);
     destinationPublicKey = recipientAccount.publicKey;
-    destinationSecretKey = recipientAccount.secretKey;
     recipientUserId = recipients[0].id;
   } else {
     throw new PaymentError("No payment destination", "INTERNAL");
@@ -274,8 +271,6 @@ async function executePaymentUnlocked(
   }
 
   await checkRateLimits(input.userId);
-
-  await ensureTakTrustline(destinationSecretKey);
 
   const amountStr = takToNumeric(input.amount);
   const signed = await buildSignedPayment({

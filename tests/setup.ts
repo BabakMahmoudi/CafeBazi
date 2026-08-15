@@ -5,6 +5,9 @@ process.env.KEY_ENCRYPTION_KEY =
 process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test-jwt-secret";
 process.env.STELLAR_NETWORK = "testnet";
 process.env.HORIZON_URL = "https://horizon-testnet.stellar.org";
+process.env.SOROBAN_RPC_URL = process.env.SOROBAN_RPC_URL ?? "https://soroban-testnet.stellar.org";
+process.env.TAK_CONTRACT_ID =
+  process.env.TAK_CONTRACT_ID ?? "CBI3WR5NQZUQ5PAPV4TBCOFMJ3MOJVZVMH5CKCGVOP63YV2SPFZN3Z7C";
 process.env.TAK_ISSUER_PUBLIC_KEY =
   process.env.TAK_ISSUER_PUBLIC_KEY ?? "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 process.env.CRON_SECRET = process.env.CRON_SECRET ?? "test-cron-secret";

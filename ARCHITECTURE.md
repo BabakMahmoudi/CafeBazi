@@ -86,14 +86,14 @@ Runtime: **Node 22** everywhere — `"engines": { "node": ">=22" }` in `package.
 | Account | Owned by | Purpose |
 |---|---|---|
 | `ISSUER` | Community treasury | Issues/burns `TAK`; receives shop redemptions (burn) |
-| `FUNDING` | Operators | Funds new custodial accounts: base reserve (~2 XLM/account incl. trustline) + ops |
+| `FUNDING` | Operators | Funds new custodial accounts (base reserve + Soroban fee float) + ops |
 | `LOTTERY_POOL` | Community treasury | Holds the weekly prize float; pays 100 TAK per draw |
 | Per-member account | Server (custodial) | One per member; created at onboarding |
 | Per-shop account | Server (custodial) | One per merchant; receives cup payments |
 
-**Custody:** the server generates each account's keypair, funds it via `FUNDING`, adds the `TAK` trustline, encrypts the secret with AES-256-GCM under `KEY_ENCRYPTION_KEY`, and stores only the ciphertext + public key. All signing happens server-side; users never see private keys.
+**Custody:** the server generates each account's keypair, funds it via `FUNDING`, encrypts the secret with AES-256-GCM under `KEY_ENCRYPTION_KEY`, and stores only the ciphertext + public key. All signing happens server-side; users never see private keys.
 
-**XLM reserves:** each custodial account costs ~2 XLM (account entry + trustline), subject to Stellar network fee changes. Budget ~2,000 XLM to fund ~1,000 member accounts. This is a documented business cost.
+**XLM reserves:** each custodial account needs the base reserve (~1 XLM) plus a small Soroban fee float (resource fees are burned per contract call); no trustlines are required because TAK is a Soroban token contract. Budget ~2,000 XLM to fund ~1,000 member accounts. This is a documented business cost.
 
 ### 5.2 Asset
 
@@ -131,17 +131,16 @@ Client (MiniApp)      Next.js (/api/auth/tma)      Neon          Stellar
       │ initData + user      │                        │              │
       │─────────────────────>│ validate HMAC          │              │
       │                      │ (@tma.js/init-data-node)              │
-      │                      │ upsert user            │─────────────>│
-      │                      │ generate keypair       │              │
-      │                      │ fund from FUNDING +    │              │
-      │                      │ add TAK trustline      │─────────────>│
-      │                      │ AES-256-GCM encrypt    │              │
-      │                      │ store ciphertext       │─────────────>│
-      │  JWT httpOnly cookie │                        │              │
-      │<─────────────────────│                        │              │
+│                      │ upsert user            │─────────────>│
+│                      │ generate keypair       │              │
+│                      │ fund from FUNDING      │─────────────>│
+│                      │ AES-256-GCM encrypt    │              │
+│                      │ store ciphertext       │─────────────>│
+│  JWT httpOnly cookie │                        │              │
+│<─────────────────────│                        │              │
 ```
 
-Steps: verify initData → upsert `users` → create keypair → fund via `FUNDING` + trustline → encrypt & store secret in `stellar_accounts` → set JWT cookie.
+Steps: verify initData → upsert `users` → create keypair → fund via `FUNDING` → encrypt & store secret in `stellar_accounts` → set JWT cookie.
 
 ### 7.2 Coffee purchase (incl. QR fast-pay)
 
@@ -151,13 +150,13 @@ Client            tRPC payments.create           Neon                  Stellar
    │ (QR prefill)       │                          │                      │
    │───────────────────>│ build+sign member→shop    │                      │
    │                    │ insert tx (pending)      │─────────────────────>│
-   │                    │ submit to Horizon        │─────────────────────>│
+   │                    │ submit to Soroban RPC    │─────────────────────>│
    │                    │ update tx (submitted)    │─────────────────────>│
    │  brewing animation │ confirm → (confirmed)    │                      │
    │<───────────────────│                          │                      │
 ```
 
-Steps: choose shop/cups (optionally pre-filled from a scanned QR, below) → server builds & signs a `member → shop` TAK payment → submit to Horizon → insert a `transactions` row with unique `tx_hash` → confirm → client shows the "brewing" animation while pending.
+Steps: choose shop/cups (optionally pre-filled from a scanned QR, below) → server builds & signs a `member → shop` TAK contract `transfer` (simulate → assemble → submit via Soroban RPC) → insert a `transactions` row with unique `tx_hash` → confirm → client shows the "brewing" animation while pending.
 
 **QR fast-pay:** each shop — and optionally each table — displays a static QR card encoding `https://t.me/<bot>?startapp=<payload>` (e.g. `s3` for shop 3, `s3t2` for shop 3 table 2; `start_param` is capped at 64 chars). The numeric id maps to `coffee_shops.slug` (`UNIQUE`). The customer scans it with the Telegram or OS camera (scanning happens *outside* the MiniApp — WebView camera access is unreliable); Telegram opens the bot and launches the MiniApp with `start_param` in `initDataUnsafe`. The app pre-selects the shop/table so the customer only taps the cup count and confirm. The server validates the payload against `coffee_shops` (`is_active`) before pre-filling; short-lived HMAC-signed one-time pay tokens (nonce + expiry, like game sessions in §7.6) are reserved for future table billing.
 
@@ -216,12 +215,12 @@ Client (MiniApp)      tRPC payments.send            Neon             Stellar
    │                     │ (username/contacts table)  │                 │
    │                     │ build+sign member→member   │                 │
    │                     │ insert tx (pending)        │────────────────>│
-   │                     │ submit to Horizon          │────────────────>│
+   │                     │ submit to Soroban RPC      │────────────────>│
    │  cup flies across   │ confirm → (confirmed)      │                 │
    │<────────────────────│                            │                 │
 ```
 
-Steps: pick a recipient — username search (Telegram usernames are globally unique) or the lazily-built `contacts` table — → server resolves the recipient in `users` (must be onboarded) → builds & signs a `member → member` TAK payment → the exact lifecycle, idempotency, and reconciliation of §7.2 → the recipient sees the incoming cup with its `memo` in `wallet.get`. P2P payments are rate-limited and capped per user (see §10); the `memo` is a first-class fun surface (rotating Persian café-phrase presets + free text).
+Steps: pick a recipient — username search (Telegram usernames are globally unique) or the lazily-built `contacts` table — → server resolves the recipient in `users` (must be onboarded) → builds & signs a `member → member` TAK contract `transfer` → the exact lifecycle, idempotency, and reconciliation of §7.2 → the recipient sees the incoming cup with its `memo` in `wallet.get`. P2P payments are rate-limited and capped per user (see §10); the `memo` is a first-class fun surface (rotating Persian café-phrase presets + free text) — stored in `transactions.memo` only, since Soroban transactions do not support on-chain memos.
 
 ### 7.9 Chat payments (pay-by-message)
 
@@ -320,7 +319,7 @@ cafe-bazi/
 
 - **Auth:** initData HMAC-validated server-side with `@tma.js/init-data-node` using `TELEGRAM_BOT_TOKEN`; never trust client-side `window.Telegram.WebApp.initData` alone. Session = signed JWT in an httpOnly cookie, resolved once into the tRPC context; `protectedProcedure` / `adminProcedure` middleware enforce membership and `role = admin` on every procedure. Plain handlers (§8.2) re-check the cookie or `CRON_SECRET` directly.
 - **Custody:** private keys encrypted with AES-256-GCM; master key in `KEY_ENCRYPTION_KEY` (Vercel env, never committed). No private material in client bundles.
-- **Idempotency:** payment code relies on the DB unique `transactions.tx_hash` and the status machine `pending → submitted → confirmed | failed`; a reconciliation job resolves stuck `submitted` rows against Horizon.
+- **Idempotency:** payment code relies on the DB unique `transactions.tx_hash` and the status machine `pending → submitted → confirmed | failed`; a reconciliation job resolves stuck `submitted` rows against Soroban RPC (with Horizon fallback for classic transactions).
 - **Isolation:** Stellar and DB modules are `server-only`; route handlers stay light.
 - **Anti-cheat:** HMAC-signed game sessions with TTL, per-user rate limits, server-side score bounds, nonce reuse rejection.
 - **P2P & chat payments:** recipient resolution is server-side only (`telegram_username`, `telegram_id`, `forward_from`) — never trust a client-supplied recipient ID; the bot webhook validates the update signature against `TELEGRAM_BOT_TOKEN` on every request; chat payments require an inline confirm keyboard showing recipient + amount before signing; per-user send caps and rate limits (incl. new-account limits); `phone` is stored only after explicit one-time `requestContact` consent.
@@ -338,7 +337,7 @@ cafe-bazi/
 | Misattributed forward | Server-side recipient resolution; show recipient preview + confirm keyboard before paying |
 | Cold starts | Light tRPC procedures and route handlers; Neon HTTP driver pools connections; lazy Stellar SDK imports |
 | Lost funding/issuer keys | Keys in Vercel env + documented backup procedure; `FUNDING`/`ISSUER` secrets never in code |
-| Stuck payments | Reconciliation job: `submitted` → poll Horizon → `confirmed` or `failed` |
+| Stuck payments | Reconciliation job: `submitted` → poll Soroban RPC → `confirmed` or `failed` |
 
 ## 12. Deployment (Vercel)
 
@@ -358,6 +357,8 @@ cafe-bazi/
 | `KEY_ENCRYPTION_KEY` | server | AES-256-GCM master key for Stellar secrets |
 | `STELLAR_NETWORK` | server | `testnet` (default) or `mainnet` |
 | `HORIZON_URL` | server | Horizon endpoint for the active network |
+| `SOROBAN_RPC_URL` | server | Soroban RPC endpoint used to read the TAK token contract balance |
+| `TAK_CONTRACT_ID` | server | TAK Soroban token contract address; when set, on-chain balances are read from the contract (`Balance` data key) instead of classic trustlines |
 | `TAK_ISSUER_PUBLIC_KEY` | server | TAK issuer public key (from `scripts/setup-testnet.ts`) |
 | `CRON_SECRET` | server | Bearer secret guarding `/api/cron/lottery` |
 | `JWT_SECRET` | server | JWT signing secret for the MiniApp session cookie (httpOnly) |
