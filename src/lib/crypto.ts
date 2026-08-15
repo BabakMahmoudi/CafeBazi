@@ -8,6 +8,7 @@ const TAG_LENGTH = 16;
 
 function getKey(): Buffer {
   const key = Buffer.from(env.KEY_ENCRYPTION_KEY, "base64");
+  console.warn(`key: ${key}`)
   if (key.length !== 32) {
     throw new Error("KEY_ENCRYPTION_KEY must decode to exactly 32 bytes (base64 of a 32-byte value)");
   }
