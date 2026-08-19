@@ -2,15 +2,19 @@ import { TRPCError, initTRPC } from "@trpc/server";
 import superjson from "superjson";
 import type { Context } from "./context";
 import { AuthChallengeError, WalletLinkError } from "@/services/auth-stellar";
+import { GameError } from "@/services/games";
 import { PaymentError } from "@/services/payments";
 
 export type { Context } from "./context";
 
-function typedErrorCode(error: unknown): string | undefined {
+export function typedErrorCode(error: unknown): string | undefined {
   if (error instanceof PaymentError) {
     return error.code;
   }
   if (error instanceof AuthChallengeError || error instanceof WalletLinkError) {
+    return error.code;
+  }
+  if (error instanceof GameError) {
     return error.code;
   }
   return undefined;

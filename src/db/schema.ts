@@ -26,6 +26,8 @@ export const TRANSACTION_TYPES = [
   "redemption",
   "withdrawal",
   "lottery",
+  "game_entry",
+  "game_reward",
 ] as const;
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 

@@ -23,6 +23,7 @@ type TestnetKeys = {
   issuer: { publicKey: string; secretKey: string };
   funding: { publicKey: string; secretKey: string };
   lotteryPool: { publicKey: string; secretKey: string };
+  gamePool: { publicKey: string; secretKey: string };
 };
 
 function loadExisting(): TestnetKeys | null {
@@ -35,7 +36,7 @@ function createKeys(): TestnetKeys {
     const kp = Keypair.random();
     return { publicKey: kp.publicKey(), secretKey: kp.secret() };
   };
-  return { issuer: make(), funding: make(), lotteryPool: make() };
+  return { issuer: make(), funding: make(), lotteryPool: make(), gamePool: make() };
 }
 
 async function fund(server: Horizon.Server, publicKey: string) {
@@ -69,16 +70,18 @@ async function main() {
   const keys = loadExisting() ?? createKeys();
   const server = new Horizon.Server(HORIZON_URL);
 
-  console.log("Funding ISSUER/FUNDING/LOTTERY_POOL via Friendbot...");
+  console.log("Funding ISSUER/FUNDING/LOTTERY_POOL/GAME_POOL via Friendbot...");
   await fund(server, keys.issuer.publicKey);
   await fund(server, keys.funding.publicKey);
   await fund(server, keys.lotteryPool.publicKey);
+  await fund(server, keys.gamePool.publicKey);
 
   const tak = new Asset(ISSUER_CODE, keys.issuer.publicKey);
 
   console.log("Adding TAK trustlines...");
   await submit(server, keys.funding.secretKey, [Operation.changeTrust({ asset: tak })]);
   await submit(server, keys.lotteryPool.secretKey, [Operation.changeTrust({ asset: tak })]);
+  await submit(server, keys.gamePool.secretKey, [Operation.changeTrust({ asset: tak })]);
 
   console.log("Issuing TAK to FUNDING (100000) and LOTTERY_POOL (10000)...");
   await submit(
@@ -105,11 +108,25 @@ async function main() {
     ],
     "lottery pool",
   );
+  await submit(
+    server,
+    keys.issuer.secretKey,
+    [
+      Operation.payment({
+        destination: keys.gamePool.publicKey,
+        asset: tak,
+        amount: "2000",
+      }),
+    ],
+    "game pool",
+  );
 
   writeFileSync(FILE, JSON.stringify(keys, null, 2), "utf8");
   console.log(`Wrote ${FILE} (gitignored).`);
   console.log(`TAK issuer public key: ${keys.issuer.publicKey}`);
-  console.log("Add TAK_ISSUER_PUBLIC_KEY to your env, then run pnpm db:seed.");
+  console.log(`GAME_POOL_PUBLIC_KEY: ${keys.gamePool.publicKey}`);
+  console.log(`GAME_POOL_SECRET_KEY: ${keys.gamePool.secretKey}`);
+  console.log("Add the GAME_POOL_* keys to your env, then run pnpm db:seed.");
 }
 
 main().catch((error) => {

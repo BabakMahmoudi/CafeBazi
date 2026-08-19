@@ -38,3 +38,18 @@ body {
 .brewing {
   animation: brewing 1.2s ease-in-out infinite;
 }
+
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-10px) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(140px) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.confetti-piece {
+  animation: confetti-fall 2.4s ease-in forwards;
+}

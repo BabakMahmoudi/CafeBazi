@@ -18,6 +18,7 @@ import {
   verifyChallenge,
 } from "@/services/auth-stellar";
 import { executePayment, getPaymentStatus } from "@/services/payments";
+import { createGameSession, spinRoulette } from "@/services/games";
 import { getRecipientPicker } from "@/services/recipients";
 import { getActiveShopBySlug, listActiveShops } from "@/services/shops";
 import { getWallet, syncBalanceFromChain } from "@/services/wallet";
@@ -135,6 +136,21 @@ export const appRouter = router({
       await clearSessionCookie();
       return { ok: true };
     }),
+  }),
+  games: router({
+    session: protectedProcedure.mutation(async ({ ctx }) => createGameSession(ctx.user.id)),
+    spin: protectedProcedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          nonce: z.string().min(1),
+          hmac: z.string().min(1),
+          spinType: z.enum(["free", "paid"]),
+        }),
+      )
+      .mutation(async ({ ctx, input }) =>
+        spinRoulette({ userId: ctx.user.id, ...input }),
+      ),
   }),
   admin: router({
     users: router({

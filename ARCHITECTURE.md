@@ -88,6 +88,7 @@ Runtime: **Node 22** everywhere — `"engines": { "node": ">=22" }` in `package.
 | `ISSUER` | Community treasury | Issues/burns `TAK`; receives shop redemptions (burn) |
 | `FUNDING` | Operators | Funds new custodial accounts (base reserve + Soroban fee float) + ops |
 | `LOTTERY_POOL` | Community treasury | Holds the weekly prize float; pays 100 TAK per draw |
+| `GAME_POOL` | Community treasury | Holds the games prize float; pays Espresso Roulette rewards (and refunds) |
 | Per-member account | Server (custodial) | One per member; created at onboarding |
 | Per-shop account | Server (custodial) | One per merchant; receives cup payments |
 
@@ -218,7 +219,37 @@ Steps: eligibility snapshot → fair draw (CSPRNG seeded by the latest Stellar l
 
 ### 7.6 Games
 
-Request session (`games.session`) → server issues an HMAC-signed session (game, nonce, TTL) → client plays (Espresso Roulette, Brewing Speed Challenge, Barista Puzzle) → submit score + nonce (`games.score`) → server verifies session validity, per-user rate limits, and score bounds → award tickets/coins.
+**Espresso Roulette (implemented, Phase 4).** A prize wheel in the MiniApp where members win real TAK from `GAME_POOL`. **1 free spin/day** (`FREE_SPINS_PER_DAY`) plus **paid spins at 1 TAK each** (`PAID_SPIN_COST`), capped at 10/day (`PAID_SPINS_PER_DAY`). Wheel slots, weights, and caps are constants in `src/services/games.ts` (admin tuning is a later phase; no DB-backed config).
+
+```text
+Client (MiniApp)      tRPC games.session/spin        Neon             Stellar
+   │ mount              │                                │                 │
+   │────────────────────>│ issue HMAC session (10 min)    │                 │
+   │<────────────────────│ {sessionId, nonce, hmac, caps} │                 │
+   │  tap spin           │                                │                 │
+   │────────────────────>│ verify+consume session (1×)    │                 │
+   │                     │ if paid: cap check + balance   │                 │
+   │                     │ build+sign member→GAME_POOL    │────────────────>│
+   │                     │ insert game_entry (pending)    │                 │
+   │                     │ submit → confirmed             │────────────────>│
+   │                     │ CSPRNG weighted draw           │                 │
+   │                     │ if win: build+sign POOL→member │────────────────>│
+   │                     │ insert game_reward, submit      │                 │
+   │                     │ game_scores + audit_log        │                 │
+   │  wheel animates to  │                                │                 │
+   │  server-chosen slot │                                │                 │
+   │<────────────────────│ {outcome, caps, balance, txs}  │                 │
+```
+
+Flow details:
+
+- **Anti-cheat:** the outcome is drawn server-side with `node:crypto` `randomInt` over cumulative weights. The client only animates to the server-chosen slot; a one-time HMAC session (`game_sessions`, TTL 10 min, single-use `active → used`) authenticates each spin. Rejection codes: `SESSION_INVALID` / `SESSION_EXPIRED` / `SESSION_USED`.
+- **Caps:** `createGameSession` rejects with `RATE_LIMIT` only when both caps are exhausted; free spins are capped at spin time by the daily session count, paid spins by the daily `game_entry` count. Free spins remaining = daily sessions minus paid entries, so a paid spin never consumes the free spin.
+- **Transfers:** both the entry fee (`transactions.type = "game_entry"`, member → `GAME_POOL`) and any reward (`type = "game_reward"`, `GAME_POOL` → member) reuse the idempotent `transactions.tx_hash` unique + `pending → submitted → confirmed | failed` machine, serialized per user by `withAccountLock`. On-chain amounts are whole TAK; the cached `balances` row is updated only on confirmed transfers.
+- **Prize-failure handling:** if the reward transfer fails, the service attempts one automatic refund (`GAME_POOL` → member, 1 TAK) for paid spins. If the refund also fails (or a free-spin reward fails, where there is no fee to refund), an `audit_log` entry with `metadata: { needsRefund: true }` is written for the reconciliation job, and the spin throws `POOL_UNAVAILABLE`.
+- **UX:** the wheel is procedural SVG (8 slots, palette fills, gold jackpot), rotated with a CSS ease-out transition; `@telegram-apps/sdk-react` haptics and CSS confetti on wins. No image assets or new packages.
+
+Brewing Speed Challenge and Barista Puzzle remain roadmap items; their schema tables are reserved.
 
 ### 7.7 Mint/burn + audit
 
@@ -377,8 +408,8 @@ The internal API is a **tRPC router** (`src/server/trpc/root.ts`) mounted at `/a
 | `admin.users.create` | mutation | admin | Add a user (row + custodial Stellar account + zero `balances` row) (§7.10) |
 | `admin.users.update` | mutation | admin | Edit user (`firstName`, `telegramUsername`, `phone`, `role`; `telegramId` immutable) (§7.10) |
 | `admin.users.syncBalance` | mutation | admin | Refresh one user's cached balance from the on-chain TAK balance (§7.10) |
-| `games.session` | mutation | JWT | Request HMAC-signed game session |
-| `games.score` | mutation | JWT + session | Submit score for verification |
+| `games.session` | mutation | JWT | Issue an HMAC-signed one-time game session + remaining spin counters |
+| `games.spin` | mutation | JWT + session | Verify/consume the session, enforce caps, draw the outcome server-side, move fees/rewards (`game_entry`/`game_reward`), record score + audit |
 | `lottery.enter` | mutation | JWT (member) | Enter weekly lottery |
 | `lottery.status` | query | JWT | Draw status + entries |
 | `admin.coins.mint` / `admin.coins.burn` / `admin.coins.topUp` | mutation | admin | Mint / burn / top-up |
@@ -492,6 +523,8 @@ cafe-bazi/
 | `SOROBAN_RPC_URL` | server | Soroban RPC endpoint used to invoke/read the TAK SEP-41 token contract (defaults to testnet) |
 | `TAK_CONTRACT_ID` | server | TAK SEP-41 Soroban token contract address; setting it activates contract mode (SEP-41 `transfer` payments + `("Balance", address)` balance reads); unset → classic trustline fallback |
 | `TAK_ISSUER_PUBLIC_KEY` | server | TAK issuer public key (from `scripts/setup-testnet.ts`) |
+| `GAME_POOL_PUBLIC_KEY` | server | Espresso Roulette prize-pool public key (from `scripts/setup-testnet.ts`) |
+| `GAME_POOL_SECRET_KEY` | server | Espresso Roulette prize-pool secret; signs reward/refund transfers (never leaves server env) |
 | `CRON_SECRET` | server | Bearer secret guarding `/api/cron/lottery` |
 | `JWT_SECRET` | server | JWT signing secret for the MiniApp session cookie (httpOnly) |
 | `SEP10_SIGNING_KEY` | server | SEP-10 signing key for Stellar Web Authentication (Freighter/Albedo login/link). Its public key is derived at runtime and must match the `NEXT_PUBLIC_APP_URL` hostname; it must never equal a custodial user account (§7.11) |

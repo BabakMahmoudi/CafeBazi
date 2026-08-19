@@ -142,6 +142,12 @@ export function OnboardingGate() {
           {t("nav.send")}
         </Link>
         <Link
+          href="/game"
+          className="flex-1 rounded-xl border border-accent px-4 py-3 text-center font-semibold text-accent"
+        >
+          {t("nav.game")}
+        </Link>
+        <Link
           href="/wallets"
           className="flex-1 rounded-xl border border-accent px-4 py-3 text-center font-semibold text-accent"
         >

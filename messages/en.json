@@ -7,6 +7,7 @@
     "wallet": "Wallet",
     "buy": "Buy coffee",
     "send": "Send a cup",
+    "game": "Play",
     "admin": "Admin panel"
   },
   "wallet": {
@@ -171,6 +172,32 @@
     "scanHint": "Scan this code with the Telegram camera and start the MiniApp to pay.",
     "table": "Table",
     "botLink": "Link preview"
+  },
+  "game": {
+    "title": "Espresso Roulette",
+    "subtitle": "One free spin a day; winners take home real coffee ☕",
+    "spin": "Spin",
+    "spinning": "Spinning…",
+    "paidSpin": "Spin for {cost} TAK",
+    "spinsLeft": "Free spins: {n}",
+    "paidSpinsLeft": "Paid spins: {n}",
+    "youWon": "You won {prize} TAK!",
+    "noWin": "Not this time — try again!",
+    "loading": "Preparing the wheel…",
+    "slots": {
+      "burnt": "Burnt",
+      "cup": "One cup",
+      "double": "Two cups",
+      "jackpot": "Jackpot"
+    },
+    "errors": {
+      "session": "Your game session expired. Please try again.",
+      "rateLimit": "No spins left today.",
+      "insufficient": "Insufficient balance.",
+      "accountNotReady": "Your Stellar account is not ready yet. Try again shortly.",
+      "poolUnavailable": "The prize pool is unavailable. Try again shortly.",
+      "generic": "Something went wrong. Try again."
+    }
   },
   "admin": {
     "title": "User management",

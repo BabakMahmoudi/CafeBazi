@@ -15,6 +15,8 @@ const envSchema = z.object({
     .default("https://soroban-testnet.stellar.org"),
   TAK_CONTRACT_ID: z.string().default(""),
   TAK_ISSUER_PUBLIC_KEY: z.string().min(1, "TAK_ISSUER_PUBLIC_KEY is required"),
+  GAME_POOL_PUBLIC_KEY: z.string().min(1, "GAME_POOL_PUBLIC_KEY is required"),
+  GAME_POOL_SECRET_KEY: z.string().min(1, "GAME_POOL_SECRET_KEY is required"),
   CRON_SECRET: z.string().default(""),
   WEBHOOK_SECRET_TOKEN: z.string().default(""),
   JWT_SECRET: z.string().min(1, "JWT_SECRET is required"),
