@@ -10,6 +10,7 @@ const TYPE_KEYS: Record<string, string> = {
   mint: "wallet.mint",
   burn: "wallet.burn",
   redemption: "wallet.redemption",
+  withdrawal: "wallet.withdrawal",
   lottery: "wallet.lottery",
 };
 

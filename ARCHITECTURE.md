@@ -95,6 +95,17 @@ Runtime: **Node 22** everywhere — `"engines": { "node": ">=22" }` in `package.
 
 **XLM reserves:** each custodial account needs the base reserve (~1 XLM) plus a small Soroban fee float (resource fees are burned per contract call); no trustlines are required because TAK is a SEP-41 Soroban token contract. Budget ~2,000 XLM to fund ~1,000 member accounts. This is a documented business cost.
 
+### 5.3 Identity: Telegram users, web users, and linked wallets
+
+`users.telegram_id` stays NOT NULL + UNIQUE as the identity key. Web-only visitors who sign in with Stellar Web Authentication (SEP-10) reuse the existing placeholder pattern from admin-created users: `telegramId = "web-" + crypto.randomUUID()`. They cannot be addressed via the bot/chat paths (no numeric Telegram id), which is correct.
+
+An optional **linked wallet** (`wallet_links`) is a user's own external Stellar address. It serves as:
+
+1. **Identity** — a linked public key is how `resolveStellarLogin` maps a SEP-10 login back to an existing account, and it is the proof-of-ownership anchor for the whole web auth flow.
+2. **Withdrawal/fallback destination** — when a recipient has no custodial account, P2P gifts are paid to their linked wallet directly (their own keys, no cached-balance credit). The linked wallet is **never** the payment source: custody and signing remain server-side.
+
+Linking requires SEP-10 proof of ownership, and a wallet can be linked to only one user (`UNIQUE (wallet_links.public_key)`), which also prevents "log in as someone else" via a second pre-existing link.
+
 ### 5.2 Asset
 
 - TAK is a **SEP-41 Soroban token contract** identified by `TAK_CONTRACT_ID` — not a classic trustline asset. Payments are SEP-41 `transfer(from, to, i128)` contract invocations submitted via Soroban RPC; balances are read from the contract's `("Balance", address)` data key. The classic trustline path (code `TAK`, issuer = community treasury `ISSUER`) is a fallback used only when `TAK_CONTRACT_ID` is unset.
@@ -113,7 +124,7 @@ Money columns are `numeric` (no decimals); the TS side is `bigint`. Enums are ch
 | `users` | `id`, `telegram_id`, `telegram_username`, `first_name`, `phone` (nullable, opt-in via Telegram `requestContact`), `role` (`member\|merchant\|admin`), timestamps | `UNIQUE (telegram_id)` |
 | `stellar_accounts` | `id`, `user_id`, `public_key`, `encrypted_secret`, `status` | `UNIQUE (public_key)`; `FK user_id` |
 | `coffee_shops` | `id`, `merchant_id`, `slug`, `name`, `address`, `is_active` | `FK merchant_id`; `UNIQUE (slug)` — the short public id encoded in QR `start_param` payloads (`s3` → `slug = '3'`) |
-| `transactions` | `id`, `tx_hash`, `type` (`purchase\|p2p\|gift\|mint\|burn\|redemption\|lottery`), `status` (`pending\|submitted\|confirmed\|failed`), `amount` (numeric), `from_account`, `to_account`, `memo`, `user_id`, `shop_id`, timestamps | `UNIQUE (tx_hash)` — idempotency key; `idx (user_id, created_at)` |
+| `transactions` | `id`, `tx_hash`, `type` (`purchase\|p2p\|gift\|mint\|burn\|redemption\|withdrawal\|lottery`), `status` (`pending\|submitted\|confirmed\|failed`), `amount` (numeric), `from_account`, `to_account`, `memo`, `user_id`, `shop_id`, timestamps | `UNIQUE (tx_hash)` — idempotency key; `idx (user_id, created_at)` |
 | `balances` | `id`, `user_id`, `shop_id` (nullable), `amount` (numeric), `updated_at` | Denormalized cache; `UNIQUE (user_id)` and `UNIQUE (shop_id)` |
 | `contacts` | `id`, `user_id`, `contact_user_id`, `source` (`username\|transfer\|phone`), `nickname`, `last_used_at` | Lazily built from successful sends + username searches (the community directory is `users` itself); `UNIQUE (user_id, contact_user_id)`; `idx (user_id, last_used_at)` |
 | `game_sessions` | `id`, `user_id`, `game`, `nonce`, `hmac`, `expires_at`, `status` | HMAC-signed; `idx (user_id, game, created_at)` for rate limits |
@@ -122,6 +133,8 @@ Money columns are `numeric` (no decimals); the TS side is `bigint`. Enums are ch
 | `lottery_draws` | `id`, `week`, `status` (`scheduled\|drawn\|paid`), `winner_user_id`, `ledger_hash`, `prize` (100), `drawn_at` | `UNIQUE (week)` — idempotency + overlap lock |
 | `inventory` | `id`, `item`, `quantity_grams`, `updated_at` | Central bean stock |
 | `redemptions` | `id`, `shop_id`, `amount_tak`, `beans_grams`, `status`, `admin_id`, `created_at` | Shop coins → beans |
+| `wallet_links` | `id`, `user_id`, `public_key`, `source` (`stellar`), `label` (nullable), `verified_at`, `created_at` | User's own external Stellar wallets; `UNIQUE (public_key)` (identity mapping, one wallet = one user); `idx (user_id)` |
+| `auth_challenges` | `id`, `public_key`, `nonce` (uint64 memo), `purpose` (`login\|link`), `status` (`pending\|used\|expired`), `expires_at`, `created_at` | SEP-10 challenges; `UNIQUE (nonce)` (single-use), `idx (status)`, `idx (public_key)` |
 | `audit_log` | `id`, `actor_user_id`, `action`, `entity`, `entity_id`, `metadata` (jsonb), `created_at` | Append-only; every mint/burn/redemption/admin action. `metadata` records structured intent context (e.g. `{action, cups, shop, table, source}`) — the future AI/LLM grounding dataset (§16.3.4) |
 
 ## 7. Key flows
@@ -261,6 +274,30 @@ Admin-only page at `/admin` (`src/app/[locale]/admin/page.tsx`), backed by the `
 - **Add** (`admin.users.create`): inserts a `users` row, creates a custodial Stellar account via `ensureStellarAccount` (keypair + testnet funding; `pending_funding` on funding failure/mainnet until Phase 6), and ensures a zero `balances` row. `telegramId` is optional at create — when omitted the service stores a `manual-<uuid>` placeholder, so the user cannot sign in via Telegram but can hold/receive TAK.
 - **Edit** (`admin.users.update`): changes `firstName`, `telegramUsername`, `phone` (nullable to clear), and `role`. `telegramId` is immutable (set only at create). Guard rails: an admin cannot demote themselves, and the last remaining admin cannot be demoted.
 
+### 7.11 Web sign-in (SEP-10 / Freighter) and linked wallets
+
+```text
+Browser (Freighter)      /api/auth/stellar/*        Neon             Stellar
+   │ requestAccess           │                        │                 │
+   │───────────────────────>│ issue challenge         │                 │
+   │ challenge XDR          │  (buildChallengeTx +    │                 │
+   │<───────────────────────│   memo nonce, 5 min TTL)│───────────────>│
+   │ signTransaction        │                        │                 │
+   │───────────────────────>│ verify (single-use,     │                 │
+   │  (from client)         │  readChallengeTx +      │                 │
+   │                        │  verifyChallengeTxSigners)               │
+   │                        │ consume challenge row   │───────────────>│
+   │                        │ resolveStellarLogin     │                │
+   │  JWT httpOnly cookie   │  (wallet_links → user)  │                │
+   │<───────────────────────│                        │                 │
+```
+
+Steps: the client asks Freighter for access and reads the active public key → `POST /api/auth/stellar/challenge` returns a SEP-10 challenge XDR (built for that public key, memo = uint64 nonce, `web_auth_domain` = app hostname) plus the server-known `networkPassphrase` → Freighter signs the challenge with the wallet's key (`signTransaction(xdr, { networkPassphrase })`) → `POST /api/auth/stellar/verify` re-derives the identity from the challenge's **source account** (never a client-supplied address), verifies the signature, atomically marks the challenge `used`, and resolves the user: existing `wallet_links` row → that user, else a new web user (`telegramId = web-<uuid>`, short-form `GABC…XYZ` name) with the wallet linked and a zero `balances` row → JWT cookie.
+
+Web-only users get their **custodial account lazily**: `executePayment` calls `ensureStellarAccount` + `retryAccountFunding` on first in-app spend (buy, send, withdrawal). No XLM is spent at sign-in. If the account can't be funded (e.g. mainnet), the payment fails with `ACCOUNT_NOT_READY` and the UI surfaces a retry CTA.
+
+**Linking a wallet** (authenticated, via tRPC `wallets.link*`) runs the same challenge/verify flow with `purpose: "link"`, then inserts the `wallet_links` row. Unlink is blocked when it would strip a web-only user of their last sign-in method. Sending to a web-only recipient with a verified linked wallet pays the linked address directly (external bookkeeping: no cached-balance credit, no contact row); recipients with neither get `RECIPIENT_NOT_ACTIVE` before any transaction is built.
+
 ## 8. API reference (tRPC procedures + plain Route Handlers)
 
 The internal API is a **tRPC router** (`src/server/trpc/root.ts`) mounted at `/api/trpc`. Client calls are type-inferred from `AppRouter`, so the tables below are the server-side contract. Every procedure is input-validated with a Zod schema and guarded by `protectedProcedure` (JWT session) or `adminProcedure` (JWT + `role = admin`); see §10.
@@ -271,12 +308,18 @@ The internal API is a **tRPC router** (`src/server/trpc/root.ts`) mounted at `/a
 |---|---|---|---|
 | `wallet.get` | query | JWT | Balance + transaction history |
 | `wallet.sync` | mutation | JWT | Refresh the cached `balances` row from the on-chain TAK balance (picks up external send/receive from standard Stellar wallets) |
+| `wallets.list` | query | JWT | Linked external wallets (address, source, verified date) + the TAK contract id for display |
+| `wallets.linkStart` | mutation | JWT | Issue a SEP-10 challenge with `purpose: "link"` for the given public key |
+| `wallets.linkVerify` | mutation | JWT | Verify the signed link challenge and attach the wallet to the session user |
+| `wallets.unlink` | mutation | JWT | Remove a linked wallet (blocked for a web-only user's last sign-in method) |
 | `payments.create` | mutation | JWT (member) | Create coffee payment (build, sign, submit) |
 | `payments.status(id)` | query | JWT | Payment status |
 | `payments.send` | mutation | JWT (member) | Peer-to-peer TAK payment: resolve recipient (username/contacts), build, sign, submit |
+| `payments.sendExternal` | mutation | JWT (member) | Send TAK to an external Stellar address (ed25519 `G…` only; app-user destinations credit their cached balance) |
 | `payments.recipients` | query | JWT | Recipient picker: `contacts` recents + username search over `users` |
 | `shops.listActive` | query | JWT | List active shops for the member payment flow (QR prefill fallback) |
 | `session.role` | query | JWT | Current user's role (drives the admin nav link) |
+| `session.logout` | mutation | JWT | Clear the `cb_session` cookie (web sign-out) |
 | `admin.users.list` | query | admin | List users with name, Stellar address, and cached TAK balance; search + pagination (§7.10) |
 | `admin.users.create` | mutation | admin | Add a user (row + custodial Stellar account + zero `balances` row) (§7.10) |
 | `admin.users.update` | mutation | admin | Edit user (`firstName`, `telegramUsername`, `phone`, `role`; `telegramId` immutable) (§7.10) |
@@ -299,6 +342,8 @@ Called by parties outside the MiniApp client (Telegram webview, Telegram Bot API
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | POST | `/api/auth/tma` | initData | Verify initData; upsert user; create/fund account; issue JWT |
+| POST | `/api/auth/stellar/challenge` | public | Issue a SEP-10 login challenge (`{ publicKey, purpose: "login" }`); returns XDR + `networkPassphrase` (§7.11) |
+| POST | `/api/auth/stellar/verify` | public | Verify a signed login challenge; resolve/create the user; issue JWT (§7.11) |
 | POST | `/api/bot/webhook` | `TELEGRAM_BOT_TOKEN` (update signature) | Telegram update handler: forward-to-pay, reply-to-pay, command-style payments (§7.9) |
 | GET | `/api/health` | public | Liveness probe |
 | POST | `/api/cron/lottery` | `CRON_SECRET` + cron signature | Weekly lottery draw — **built in Phase 4** (roadmap), reserved here |
@@ -314,6 +359,7 @@ cafe-bazi/
 │  │  ├─ api/
 │  │  │  ├─ trpc/[trpc]/route.ts   # tRPC HTTP handler (fetch adapter, §8)
 │  │  │  ├─ auth/tma/route.ts      # plain handler: initData → JWT cookie (§8.2)
+│  │  │  ├─ auth/stellar/          # plain handlers: SEP-10 login challenge/verify (§7.11, §8.2)
 │  │  │  ├─ bot/webhook/route.ts   # plain handler: Telegram updates → chat payments (§7.9, §8.2)
 │  │  │  ├─ cron/lottery/route.ts  # plain handler: weekly draw (§8.2)
 │  │  │  └─ health/route.ts        # public liveness probe (§8.2)
@@ -321,6 +367,7 @@ cafe-bazi/
 │  │     ├─ admin/page.tsx         # admin console: user management (§7.10)
 │  │     ├─ buy/page.tsx           # coffee purchase (§7.2)
 │  │     ├─ send/page.tsx          # P2P gifting (§7.8)
+│  │     ├─ wallets/page.tsx       # linked external wallets (§7.11)
 │  │     └─ qr/[shopSlug]/page.tsx # shop/table QR card (§7.2)
 │  ├─ components/        # UI components (tRPC React Query hooks); components/admin/ = admin console (§7.10)
 │  ├─ db/
@@ -338,7 +385,7 @@ cafe-bazi/
 
 ## 10. Security model
 
-- **Auth:** initData HMAC-validated server-side with `@tma.js/init-data-node` using `TELEGRAM_BOT_TOKEN`; never trust client-side `window.Telegram.WebApp.initData` alone. Session = signed JWT in an httpOnly cookie, resolved once into the tRPC context; `protectedProcedure` / `adminProcedure` middleware enforce membership and `role = admin` on every procedure. Plain handlers (§8.2) re-check the cookie or `CRON_SECRET` directly.
+- **Auth:** initData HMAC-validated server-side with `@tma.js/init-data-node` using `TELEGRAM_BOT_TOKEN`; never trust client-side `window.Telegram.WebApp.initData` alone. **SEP-10 (web) auth** uses the SDK's `WebAuth` helpers: the identity is the challenge's **source account** read from the signed transaction (`readChallengeTx`) — never a client-supplied address in the verify body — and signatures are checked against that address with `verifyChallengeTxSigners`. Challenges are **single-use** (uint64 memo nonce + `auth_challenges` row consumed by a guarded `pending → used` update), have a 5-minute TTL, and are rate-limited (≤10 pending/hour per public key). Challenges and wallet links are rejected for the SEP-10 server key and any custodial `stellar_accounts` address. Linking a wallet requires the same signed-challenge proof of ownership; `wallet_links.public_key` is UNIQUE so one wallet maps to one user. A web-only user cannot unlink their last wallet (their only sign-in method). Session = signed JWT in an httpOnly cookie, resolved once into the tRPC context; `protectedProcedure` / `adminProcedure` middleware enforce membership and `role = admin` on every procedure. Plain handlers (§8.2) re-check the cookie or `CRON_SECRET` directly.
 - **Custody:** private keys encrypted with AES-256-GCM; master key in `KEY_ENCRYPTION_KEY` (Vercel env, never committed). No private material in client bundles.
 - **Idempotency:** payment code relies on the DB unique `transactions.tx_hash` and the status machine `pending → submitted → confirmed | failed`; a reconciliation job resolves stuck `submitted` rows against Soroban RPC (SEP-41 contract mode; Horizon fallback for classic transactions).
 - **Isolation:** Stellar and DB modules are `server-only`; route handlers stay light.
@@ -357,6 +404,9 @@ cafe-bazi/
 | Double-spend race | Unique constraints on `tx_hash`; on-chain balance check before building a payment; single writer per account (applies to purchases and P2P) |
 | Duplicate / retried Telegram updates | `update_id` dedup + `tx_hash` idempotency on chat payments; confirm-before-pay keyboard |
 | Misattributed forward | Server-side recipient resolution; show recipient preview + confirm keyboard before paying |
+| Web user without a funded custodial account | Lazy provisioning (`ensureStellarAccount` + `retryAccountFunding`) on first spend; `ACCOUNT_NOT_READY` + retry CTA when funding is unavailable (e.g. mainnet) |
+| Recipient with no custodial account | P2P fallback to their verified linked wallet (external bookkeeping); `RECIPIENT_NOT_ACTIVE` before any transaction when neither exists |
+| Expired/used/replayed SEP-10 challenge | Single-use nonce memo consumed atomically; explicit errors; client re-issues a fresh challenge |
 | Cold starts | Light tRPC procedures and route handlers; Neon HTTP driver pools connections; lazy Stellar SDK imports |
 | Lost funding/issuer keys | Keys in Vercel env + documented backup procedure; `FUNDING`/`ISSUER` secrets never in code |
 | Stuck payments | Reconciliation job: `submitted` → poll Soroban RPC → `confirmed` or `failed` |
@@ -385,7 +435,8 @@ cafe-bazi/
 | `TAK_ISSUER_PUBLIC_KEY` | server | TAK issuer public key (from `scripts/setup-testnet.ts`) |
 | `CRON_SECRET` | server | Bearer secret guarding `/api/cron/lottery` |
 | `JWT_SECRET` | server | JWT signing secret for the MiniApp session cookie (httpOnly) |
-| `NEXT_PUBLIC_APP_URL` | both | Public base URL of the app |
+| `SEP10_SIGNING_KEY` | server | SEP-10 signing key for Stellar Web Authentication (Freighter login/link). Its public key is derived at runtime and must match the `NEXT_PUBLIC_APP_URL` hostname; it must never equal a custodial user account (§7.11) |
+| `NEXT_PUBLIC_APP_URL` | both | Public base URL of the app; its hostname is the SEP-10 home/web-auth domain |
 
 ## 13. Observability
 

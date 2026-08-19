@@ -3,6 +3,8 @@ process.env.TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "123456789:AA
 process.env.KEY_ENCRYPTION_KEY =
   process.env.KEY_ENCRYPTION_KEY ?? Buffer.alloc(32, 7).toString("base64");
 process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test-jwt-secret";
+process.env.SEP10_SIGNING_KEY =
+  process.env.SEP10_SIGNING_KEY ?? "SAAABCZCQS2R72IDWRO4XUYRTOMA4VBUNBZHTWMLW7G5OA7C6FXYUA5V";
 process.env.STELLAR_NETWORK = "testnet";
 process.env.HORIZON_URL = "https://horizon-testnet.stellar.org";
 process.env.SOROBAN_RPC_URL = process.env.SOROBAN_RPC_URL ?? "https://soroban-testnet.stellar.org";

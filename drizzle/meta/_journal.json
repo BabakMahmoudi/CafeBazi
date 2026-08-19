@@ -8,6 +8,13 @@
       "when": 1786743286954,
       "tag": "0000_dry_mandrill",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787105860858,
+      "tag": "0001_third_night_thrasher",
+      "breakpoints": true
     }
   ]
 }

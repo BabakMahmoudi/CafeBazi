@@ -2,7 +2,7 @@
 
 A community coffee-coin for Farmahin, Iran — a custodial Stellar wallet as a Telegram MiniApp where **1 TAK = 1 cup of coffee**. Buy coffee, gift cups to friends (in-app, via QR, or by forwarding a message in the bot chat), play games, win the weekly lottery — no new app install.
 
-> **Status: implemented through chat payments (roadmap Phases 1–3).** The Next.js scaffold, auth, data model, wallet read, payments + P2P, QR fast-pay, and the chat-payment bot webhook are in place. Games, lottery, merchant/store, and the AI/LLM layer are still ahead. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
+> **Status: implemented through chat payments + Stellar web auth (roadmap Phases 1–3).** The Next.js scaffold, Telegram auth + SEP-10 web auth, data model, wallet read, payments + P2P (incl. linked-wallet fallback), QR fast-pay, and the chat-payment bot webhook are in place. Games, lottery, merchant/store, and the AI/LLM layer are still ahead. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
 
 ## How the coin works
 
@@ -15,9 +15,10 @@ A community coffee-coin for Farmahin, Iran — a custodial Stellar wallet as a T
 ## Features (implemented)
 
 - Telegram MiniApp wallet — the community already uses Telegram, so no app install
+- Web login — sign in from a browser with any Stellar wallet (SEP-10, Freighter first) and link external wallets as withdrawal destinations
 - Custodial per-user Stellar accounts (testnet-first; mainnet path documented)
 - Pay for coffee in TAK with a "brewing" pending animation
-- Gift TAK to friends — recipient picker (username search + recents) inside the MiniApp
+- Gift TAK to friends — recipient picker (username search + recents) inside the MiniApp; gifts to web-only users land in their linked external wallet
 - Pay-by-QR — static per-shop/per-table cards deep-link into the app and pre-fill the order
 - Pay-by-message — forward a friend's message into the bot chat and tap to buy them a cup
 - Admin console at `/admin` — list users (name, Stellar address, cached balance), add/edit users, and sync balances from the chain
@@ -90,6 +91,7 @@ pnpm bot:setwebhook   # registers ${NEXT_PUBLIC_APP_URL}/api/bot/webhook with se
 | `TAK_ISSUER_PUBLIC_KEY` | yes* | TAK issuer public key (from `pnpm db:testnet`) (server-only) |
 | `CRON_SECRET` | prod | Bearer secret guarding `/api/cron/lottery` (server-only) |
 | `JWT_SECRET` | yes | JWT signing secret for the MiniApp session cookie (server-only). Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` |
+| `SEP10_SIGNING_KEY` | yes | SEP-10 signing key for Stellar Web Authentication (Freighter login/link). Its public key must not be a user's custodial account (server-only). Generate: `node -e "import('@stellar/stellar-sdk').then(s => console.log(s.Keypair.random().secret()))"` |
 | `NEXT_PUBLIC_APP_URL` | yes | Public base URL of the app |
 
 \* required once any Stellar transaction runs; onboarding works in `pending_funding` without it.
@@ -120,17 +122,19 @@ src/
 │  ├─ api/
 │  │  ├─ trpc/[trpc]/route.ts   # tRPC HTTP handler (fetch adapter)
 │  │  ├─ auth/tma/route.ts      # plain handler: initData → JWT cookie
+│  │  ├─ auth/stellar/          # plain handlers: SEP-10 login challenge/verify
 │  │  ├─ bot/webhook/route.ts   # plain handler: Telegram updates → chat payments
 │  │  └─ health/route.ts        # public liveness probe
 │  └─ [locale]/                 # i18n pages; fa default, RTL
 │     ├─ admin/page.tsx         # admin console: user management
 │     ├─ buy/page.tsx           # coffee purchase
 │     ├─ send/page.tsx          # P2P gifting
+│     ├─ wallets/page.tsx       # linked external wallets
 │     └─ qr/[shopSlug]/page.tsx # shop/table QR card
 ├─ components/         # UI components (tRPC React Query hooks); components/admin/ = admin console
 ├─ db/                 # Drizzle schema + client (server-only)
 ├─ server/trpc/        # tRPC router: root.ts, context.ts, middleware.ts
-├─ services/           # stellar, payments (purchase + P2P + chat), users, wallet, recipients, shops, bot
+├─ services/           # stellar, payments (purchase + P2P + chat), auth-stellar (SEP-10), users, wallet, recipients, shops, bot
 ├─ lib/                # env, auth, crypto, telegram, qr, telegram-api, trpc client/provider
 └─ i18n/               # next-intl routing/request/navigation
 ├─ drizzle/            # generated migrations

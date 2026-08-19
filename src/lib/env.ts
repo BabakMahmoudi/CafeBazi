@@ -18,6 +18,7 @@ const envSchema = z.object({
   CRON_SECRET: z.string().default(""),
   WEBHOOK_SECRET_TOKEN: z.string().default(""),
   JWT_SECRET: z.string().min(1, "JWT_SECRET is required"),
+  SEP10_SIGNING_KEY: z.string().min(1, "SEP10_SIGNING_KEY is required"),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
   NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: z.string().min(1, "NEXT_PUBLIC_TELEGRAM_BOT_USERNAME is required"),
 });

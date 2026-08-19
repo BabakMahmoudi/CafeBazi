@@ -1,13 +1,22 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, router, protectedProcedure } from "./middleware";
+import { clearSessionCookie } from "@/lib/auth";
 import { USER_ROLES } from "@/db/schema";
+import { env } from "@/lib/env";
 import {
   createUserForAdmin,
   listUsersForAdmin,
   syncUserBalanceForAdmin,
   updateUserForAdmin,
 } from "@/services/admin";
+import {
+  issueChallenge,
+  linkWallet,
+  listWalletLinks,
+  unlinkWallet,
+  verifyChallenge,
+} from "@/services/auth-stellar";
 import { executePayment, getPaymentStatus } from "@/services/payments";
 import { getRecipientPicker } from "@/services/recipients";
 import { getActiveShopBySlug, listActiveShops } from "@/services/shops";
@@ -64,6 +73,24 @@ export const appRouter = router({
           memo: input.memo,
         }),
       ),
+    sendExternal: protectedProcedure
+      .input(
+        z.object({
+          address: z.string().trim().min(1).max(56),
+          amount: amountSchema,
+          memo: z.string().trim().max(100).optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) =>
+        executePayment({
+          userId: ctx.user.id,
+          destinationAddress: input.address,
+          amount: input.amount,
+          type: "withdrawal",
+          source: "miniapp",
+          memo: input.memo,
+        }),
+      ),
     status: protectedProcedure
       .input(z.object({ id: z.string().min(1) }))
       .query(async ({ ctx, input }) => {
@@ -80,8 +107,34 @@ export const appRouter = router({
   shops: router({
     listActive: protectedProcedure.query(() => listActiveShops()),
   }),
+  wallets: router({
+    list: protectedProcedure.query(async ({ ctx }) => ({
+      wallets: await listWalletLinks(ctx.user.id),
+      takContractId: env.TAK_CONTRACT_ID || null,
+    })),
+    linkStart: protectedProcedure
+      .input(z.object({ publicKey: z.string().trim().min(1).max(56) }))
+      .mutation(({ input }) => issueChallenge({ publicKey: input.publicKey, purpose: "link" })),
+    linkVerify: protectedProcedure
+      .input(z.object({ signedChallengeXdr: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const publicKey = await verifyChallenge({
+          signedChallengeXdr: input.signedChallengeXdr,
+          purpose: "link",
+        });
+        const linked = await linkWallet(ctx.user.id, publicKey);
+        return { publicKey: linked };
+      }),
+    unlink: protectedProcedure
+      .input(z.object({ publicKey: z.string().trim().min(1).max(56) }))
+      .mutation(({ ctx, input }) => unlinkWallet(ctx.user.id, input.publicKey)),
+  }),
   session: router({
     role: protectedProcedure.query(({ ctx }) => ctx.user.role),
+    logout: protectedProcedure.mutation(async () => {
+      await clearSessionCookie();
+      return { ok: true };
+    }),
   }),
   admin: router({
     users: router({

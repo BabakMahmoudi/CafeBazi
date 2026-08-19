@@ -11,9 +11,10 @@ const h = vi.hoisted(() => ({
     getTransactionStatus: vi.fn(async () => "confirmed" as const),
     getAccountBalance: vi.fn(async () => 100n),
     getIssuerPublicKey: vi.fn(() => "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
-    generateKeypair: vi.fn(),
+    generateKeypair: vi.fn(async () => ({ publicKey: "GA-LAZY", secretKey: "SA-LAZY" })),
     createFundedAccount: vi.fn(),
     getNetworkPassphrase: vi.fn(async () => "Test SDF Network ; September 2015"),
+    isValidStellarAddress: vi.fn(async (address: string) => address.startsWith("G")),
   },
 }));
 
@@ -26,6 +27,8 @@ type SeedOverrides = {
   senderBalance?: string;
   senderAccountStatus?: string;
   transactions?: Array<Record<string, unknown>>;
+  stellarAccounts?: Array<Record<string, unknown>>;
+  walletLinks?: Array<Record<string, unknown>>;
 };
 
 function seedDb(overrides: SeedOverrides = {}) {
@@ -36,7 +39,7 @@ function seedDb(overrides: SeedOverrides = {}) {
         { id: "recipient", telegramId: "200", telegramUsername: "reza", firstName: "Reza", role: "member" },
         { id: "merchant", telegramId: "300", telegramUsername: "shop", firstName: "Shop", role: "merchant" },
       ],
-      stellar_accounts: [
+      stellar_accounts: overrides.stellarAccounts ?? [
         { id: "sa1", userId: "sender", publicKey: "GA-SENDER", encryptedSecret: encryptSecret(SECRET), status: overrides.senderAccountStatus ?? "active" },
         { id: "sa2", userId: "recipient", publicKey: "GA-RECIPIENT", encryptedSecret: encryptSecret(SECRET), status: "active" },
         { id: "sa3", userId: "merchant", publicKey: "GA-MERCHANT", encryptedSecret: encryptSecret(SECRET), status: "active" },
@@ -48,8 +51,9 @@ function seedDb(overrides: SeedOverrides = {}) {
       transactions: overrides.transactions ?? [],
       contacts: [],
       audit_log: [],
+      wallet_links: overrides.walletLinks ?? [],
     },
-    { unique: { transactions: ["txHash"] } },
+    { unique: { transactions: ["txHash"], wallet_links: ["publicKey"] } },
   );
 }
 
@@ -128,6 +132,133 @@ describe("payments service", () => {
       amount: "1",
       memo: undefined,
     });
+  });
+
+  it("sends to an external address as a withdrawal", async () => {
+    const result = await executePayment({
+      userId: "sender",
+      destinationAddress: "GD-EXTERNAL",
+      amount: 2n,
+      type: "withdrawal",
+      source: "miniapp",
+    });
+
+    expect(result.status).toBe("confirmed");
+    expect(result.type).toBe("withdrawal");
+
+    const tables = h.db.tables();
+    expect(tables.transactions).toHaveLength(1);
+    expect(tables.transactions[0]).toMatchObject({
+      txHash: "txhash-1",
+      type: "withdrawal",
+      status: "confirmed",
+      userId: "sender",
+      fromAccount: "GA-SENDER",
+      toAccount: "GD-EXTERNAL",
+    });
+    expect(tables.balances.find((b) => b.userId === "sender")?.amount).toBe("8");
+    expect(tables.balances).toHaveLength(1);
+    expect(tables.contacts).toHaveLength(0);
+    expect(tables.audit_log[0]).toMatchObject({
+      action: "payment.withdrawal",
+      entity: "transactions",
+    });
+    expect(tables.audit_log[0].metadata).toMatchObject({
+      action: "withdrawal",
+      amount: "2",
+      destination: "GD-EXTERNAL",
+      source: "miniapp",
+      status: "confirmed",
+    });
+
+    expect(h.stellar.buildSignedPayment).toHaveBeenCalledWith({
+      sourceSecretKey: SECRET,
+      destination: "GD-EXTERNAL",
+      amount: "2",
+      memo: undefined,
+    });
+    expect(h.stellar.submitEnvelope).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a malformed external address", async () => {
+    await expect(
+      executePayment({
+        userId: "sender",
+        destinationAddress: "NOT-A-STELLAR-ADDRESS",
+        amount: 1n,
+        type: "withdrawal",
+        source: "miniapp",
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_ADDRESS" });
+
+    expect(h.db.tables().transactions).toHaveLength(0);
+    expect(h.stellar.buildSignedPayment).not.toHaveBeenCalled();
+    expect(h.stellar.submitEnvelope).not.toHaveBeenCalled();
+  });
+
+  it("rejects sending to the sender's own address", async () => {
+    await expect(
+      executePayment({
+        userId: "sender",
+        destinationAddress: "GA-SENDER",
+        amount: 1n,
+        type: "withdrawal",
+        source: "miniapp",
+      }),
+    ).rejects.toMatchObject({ code: "SELF_ADDRESS" });
+
+    expect(h.db.tables().transactions).toHaveLength(0);
+    expect(h.stellar.submitEnvelope).not.toHaveBeenCalled();
+  });
+
+  it("credits an app-user destination's cached balance without a contact row", async () => {
+    const result = await executePayment({
+      userId: "sender",
+      destinationAddress: "GA-RECIPIENT",
+      amount: 2n,
+      type: "withdrawal",
+      source: "miniapp",
+    });
+
+    expect(result.status).toBe("confirmed");
+
+    const tables = h.db.tables();
+    expect(tables.transactions[0]).toMatchObject({
+      type: "withdrawal",
+      fromAccount: "GA-SENDER",
+      toAccount: "GA-RECIPIENT",
+    });
+    expect(tables.balances.find((b) => b.userId === "recipient")?.amount).toBe("2");
+    expect(tables.balances.find((b) => b.userId === "sender")?.amount).toBe("8");
+    expect(tables.contacts).toHaveLength(0);
+  });
+
+  it("counts withdrawals toward the daily send cap", async () => {
+    h.db = seedDb({
+      transactions: [
+        {
+          id: "t-cap",
+          txHash: "h-cap",
+          userId: "sender",
+          type: "withdrawal",
+          status: "confirmed",
+          amount: "50",
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    await expect(
+      executePayment({
+        userId: "sender",
+        destinationAddress: "GD-EXTERNAL",
+        amount: 1n,
+        type: "withdrawal",
+        source: "miniapp",
+      }),
+    ).rejects.toMatchObject({ code: "RATE_LIMIT" });
+
+    expect(h.stellar.submitEnvelope).not.toHaveBeenCalled();
   });
 
   it("rejects a payment when the cached balance is insufficient", async () => {
@@ -320,8 +451,37 @@ describe("payments service", () => {
     expect(payment).toBeNull();
   });
 
-  it("throws a typed error when the sender has no active account", async () => {
+  it("lazily provisions a custodial account for a web-only sender", async () => {
+    h.db = seedDb({
+      stellarAccounts: [
+        { id: "sa2", userId: "recipient", publicKey: "GA-RECIPIENT", encryptedSecret: encryptSecret(SECRET), status: "active" },
+        { id: "sa3", userId: "merchant", publicKey: "GA-MERCHANT", encryptedSecret: encryptSecret(SECRET), status: "active" },
+      ],
+    });
+
+    const result = await executePayment({
+      userId: "sender",
+      recipientUserId: "recipient",
+      amount: 1n,
+      type: "p2p",
+      source: "miniapp",
+    });
+
+    expect(result.status).toBe("confirmed");
+    const tables = h.db.tables();
+    const senderAccount = tables.stellar_accounts.find((a) => a.userId === "sender");
+    expect(senderAccount).toBeDefined();
+    expect(senderAccount?.status).toBe("active");
+    expect(tables.transactions[0]).toMatchObject({
+      fromAccount: senderAccount?.publicKey,
+      toAccount: "GA-RECIPIENT",
+    });
+    expect(h.stellar.createFundedAccount).toHaveBeenCalledWith(senderAccount?.publicKey);
+  });
+
+  it("throws ACCOUNT_NOT_READY when the sender's account cannot be funded", async () => {
     h.db = seedDb({ senderAccountStatus: "pending_funding" });
+    h.stellar.createFundedAccount.mockRejectedValueOnce(new Error("testnet only"));
 
     await expect(
       executePayment({
@@ -331,7 +491,79 @@ describe("payments service", () => {
         type: "p2p",
         source: "miniapp",
       }),
-    ).rejects.toThrow("No active Stellar account");
+    ).rejects.toMatchObject({ code: "ACCOUNT_NOT_READY" });
+
+    expect(h.stellar.buildSignedPayment).not.toHaveBeenCalled();
+    expect(h.stellar.submitEnvelope).not.toHaveBeenCalled();
+  });
+
+  it("pays a linked external wallet when the recipient has no custodial account", async () => {
+    h.db = seedDb({
+      stellarAccounts: [
+        { id: "sa1", userId: "sender", publicKey: "GA-SENDER", encryptedSecret: encryptSecret(SECRET), status: "active" },
+        { id: "sa3", userId: "merchant", publicKey: "GA-MERCHANT", encryptedSecret: encryptSecret(SECRET), status: "active" },
+      ],
+      walletLinks: [
+        { id: "wl1", userId: "recipient", publicKey: "GA-LINKED-WALLET", source: "stellar", verifiedAt: new Date() },
+      ],
+    });
+
+    const result = await executePayment({
+      userId: "sender",
+      recipientUserId: "recipient",
+      amount: 2n,
+      type: "p2p",
+      source: "miniapp",
+      memo: "نوش جان",
+    });
+
+    expect(result.status).toBe("confirmed");
+    const tables = h.db.tables();
+    expect(tables.transactions[0]).toMatchObject({
+      type: "p2p",
+      status: "confirmed",
+      fromAccount: "GA-SENDER",
+      toAccount: "GA-LINKED-WALLET",
+      userId: "sender",
+    });
+    expect(tables.balances.find((b) => b.userId === "sender")?.amount).toBe("8");
+    expect(tables.balances.find((b) => b.userId === "recipient")).toBeUndefined();
+    expect(tables.contacts).toHaveLength(0);
+    expect(tables.audit_log[0].metadata).toMatchObject({
+      action: "p2p",
+      recipient: "recipient",
+      destination: "GA-LINKED-WALLET",
+      status: "confirmed",
+    });
+    expect(h.stellar.buildSignedPayment).toHaveBeenCalledWith({
+      sourceSecretKey: SECRET,
+      destination: "GA-LINKED-WALLET",
+      amount: "2",
+      memo: "نوش جان",
+    });
+  });
+
+  it("rejects a p2p send when the recipient has no custodial account and no linked wallet", async () => {
+    h.db = seedDb({
+      stellarAccounts: [
+        { id: "sa1", userId: "sender", publicKey: "GA-SENDER", encryptedSecret: encryptSecret(SECRET), status: "active" },
+        { id: "sa3", userId: "merchant", publicKey: "GA-MERCHANT", encryptedSecret: encryptSecret(SECRET), status: "active" },
+      ],
+    });
+
+    await expect(
+      executePayment({
+        userId: "sender",
+        recipientUserId: "recipient",
+        amount: 1n,
+        type: "p2p",
+        source: "miniapp",
+      }),
+    ).rejects.toMatchObject({ code: "RECIPIENT_NOT_ACTIVE" });
+
+    expect(h.db.tables().transactions).toHaveLength(0);
+    expect(h.stellar.buildSignedPayment).not.toHaveBeenCalled();
+    expect(h.stellar.submitEnvelope).not.toHaveBeenCalled();
   });
 
   it("rejects sending to yourself", async () => {

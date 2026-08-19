@@ -28,6 +28,7 @@ export function BuyCoffee() {
   const [cups, setCups] = useState(1);
   const [table, setTable] = useState("");
   const [prefilled, setPrefilled] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,11 +49,17 @@ export function BuyCoffee() {
 
   async function handlePay() {
     if (!selectedSlug) return;
-    await create.mutateAsync({
-      shopSlug: selectedSlug,
-      cups,
-      table: table || undefined,
-    });
+    setPayError(null);
+    try {
+      await create.mutateAsync({
+        shopSlug: selectedSlug,
+        cups,
+        table: table || undefined,
+      });
+    } catch (err) {
+      const typedCode = (err as { data?: { typedCode?: string } } | null)?.data?.typedCode;
+      setPayError(typedCode === "ACCOUNT_NOT_READY" ? "accountNotReady" : "generic");
+    }
   }
 
   const creating = create.isPending;
@@ -108,8 +115,10 @@ export function BuyCoffee() {
       )}
 
       {done && <p className="rounded-xl bg-green-100 p-3 text-green-900">{t("confirmed")}</p>}
-      {create.isError && (
-        <p className="rounded-xl bg-red-100 p-3 text-red-900">{t("error")}</p>
+      {payError && (
+        <p className="rounded-xl bg-red-100 p-3 text-red-900">
+          {t(payError === "generic" ? "error" : payError)}
+        </p>
       )}
 
       {creating ? (

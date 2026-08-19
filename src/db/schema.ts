@@ -23,6 +23,7 @@ export const TRANSACTION_TYPES = [
   "mint",
   "burn",
   "redemption",
+  "withdrawal",
   "lottery",
 ] as const;
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];
@@ -48,6 +49,15 @@ export type LotteryDrawStatus = (typeof LOTTERY_DRAW_STATUSES)[number];
 
 export const REDEMPTION_STATUSES = ["pending", "dispatched", "cancelled"] as const;
 export type RedemptionStatus = (typeof REDEMPTION_STATUSES)[number];
+
+export const WALLET_LINK_SOURCES = ["stellar"] as const;
+export type WalletLinkSource = (typeof WALLET_LINK_SOURCES)[number];
+
+export const AUTH_CHALLENGE_PURPOSES = ["login", "link"] as const;
+export type AuthChallengePurpose = (typeof AUTH_CHALLENGE_PURPOSES)[number];
+
+export const AUTH_CHALLENGE_STATUSES = ["pending", "used", "expired"] as const;
+export type AuthChallengeStatus = (typeof AUTH_CHALLENGE_STATUSES)[number];
 
 export const users = pgTable(
   "users",
@@ -259,5 +269,40 @@ export const auditLog = pgTable(
   (table) => [
     index("audit_log_actor_created_idx").on(table.actorUserId, table.createdAt),
     index("audit_log_action_idx").on(table.action),
+  ],
+);
+
+export const walletLinks = pgTable(
+  "wallet_links",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull().references(() => users.id),
+    publicKey: text("public_key").notNull(),
+    source: text("source", { enum: WALLET_LINK_SOURCES }).notNull().default("stellar"),
+    label: text("label"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("wallet_links_public_key_unique").on(table.publicKey),
+    index("wallet_links_user_id_idx").on(table.userId),
+  ],
+);
+
+export const authChallenges = pgTable(
+  "auth_challenges",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    publicKey: text("public_key").notNull(),
+    nonce: text("nonce").notNull(),
+    purpose: text("purpose", { enum: AUTH_CHALLENGE_PURPOSES }).notNull(),
+    status: text("status", { enum: AUTH_CHALLENGE_STATUSES }).notNull().default("pending"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("auth_challenges_nonce_unique").on(table.nonce),
+    index("auth_challenges_status_idx").on(table.status),
+    index("auth_challenges_public_key_idx").on(table.publicKey),
   ],
 );

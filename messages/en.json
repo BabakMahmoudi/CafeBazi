@@ -33,6 +33,7 @@
     "mint": "Mint",
     "burn": "Burn",
     "redemption": "Redemption",
+    "withdrawal": "Withdrawal",
     "lottery": "Lottery"
   },
   "onboarding": {
@@ -44,6 +45,41 @@
     "openInTelegram": "Open this app inside Telegram to create your wallet.",
     "authFailed": "Could not sign you in. Please try again."
   },
+  "webLogin": {
+    "title": "Sign in with a Stellar wallet",
+    "hint": "Sign in with the Freighter extension and a Cafe Bazi account is created for you.",
+    "button": "Sign in with Freighter",
+    "loading": "Please confirm in Freighter…",
+    "notInstalled": "The Freighter extension is not installed.",
+    "installLink": "Install the Freighter extension",
+    "rejected": "Sign-in was not approved in Freighter.",
+    "challengeFailed": "Could not fetch the sign-in challenge. Try again.",
+    "verifyFailed": "Could not verify the signature. Try again.",
+    "rateLimited": "Too many attempts. Try again in an hour.",
+    "generic": "Something went wrong. Try again."
+  },
+  "wallets": {
+    "title": "Linked wallets",
+    "loading": "Loading…",
+    "empty": "No wallets linked yet.",
+    "verifiedAt": "Verified",
+    "remove": "Remove",
+    "removing": "Removing…",
+    "add": "Add a wallet",
+    "adding": "Please confirm in Freighter…",
+    "contractTitle": "TAK token contract",
+    "contractHint": "To see balances in Freighter, add this contract to your wallet.",
+    "notInstalled": "The Freighter extension is not installed.",
+    "installLink": "Install the Freighter extension",
+    "rejected": "The request was not approved in Freighter.",
+    "challengeFailed": "The challenge expired or was already used. Try again.",
+    "alreadyLinked": "This wallet is already linked to an account.",
+    "lastWallet": "This is your only sign-in method. Add another wallet first.",
+    "custodialKey": "This address is an internal account and cannot be linked.",
+    "generic": "Something went wrong. Try again.",
+    "logout": "Sign out",
+    "signingOut": "Signing out…"
+  },
   "buy": {
     "title": "Buy coffee",
     "selectShop": "Shops",
@@ -53,7 +89,8 @@
     "confirm": "Pay",
     "brewing": "Brewing…",
     "confirmed": "Enjoy! Your coffee is ready ☕",
-    "error": "Payment failed. Try again."
+    "error": "Payment failed. Try again.",
+    "accountNotReady": "Your Stellar account is not ready yet. Try again shortly."
   },
   "send": {
     "title": "Send a cup",
@@ -65,7 +102,19 @@
     "memoPlaceholder": "e.g. Enjoy!",
     "confirm": "Send",
     "success": "Cup sent ☕",
-    "error": "Send failed. Try again."
+    "error": "Send failed. Try again.",
+    "tabToUser": "To a user",
+    "tabExternal": "To a wallet",
+    "externalTitle": "Send to an external wallet",
+    "externalAddress": "Stellar wallet address",
+    "externalPlaceholder": "G…",
+    "externalHint": "Send to any Stellar wallet, e.g. Freighter.",
+    "externalLinkedHint": "Your linked wallet address is prefilled.",
+    "externalInvalid": "Invalid address",
+    "externalSuccess": "Sent to the external wallet ☕",
+    "paysToExternalHint": "Lands in this user's linked wallet",
+    "recipientNotActive": "This user has not activated their wallet yet.",
+    "accountNotReady": "Your Stellar account is not ready yet. Try again shortly."
   },
   "qr": {
     "title": "Shop payment card",

@@ -1,19 +1,21 @@
 import "server-only";
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
   auditLog,
   balances,
   coffeeShops,
   contacts,
+  stellarAccounts,
   transactions,
   users,
+  walletLinks,
   type TransactionStatus,
   type TransactionType,
 } from "@/db/schema";
 import { takFromNumeric, takToNumeric } from "@/lib/money";
-import { buildSignedPayment, getAccountBalance, getTransactionStatus, submitEnvelope } from "@/services/stellar";
-import { getStellarAccountSecret } from "@/services/users";
+import { buildSignedPayment, getAccountBalance, getTransactionStatus, isValidStellarAddress, submitEnvelope } from "@/services/stellar";
+import { ensureStellarAccount, getStellarAccountSecret, retryAccountFunding } from "@/services/users";
 
 export const DAILY_SEND_CAP = 50n;
 export const DAILY_SEND_COUNT_LIMIT = 20;
@@ -23,7 +25,17 @@ export const CHAT_DEDUP_MEMO_PREFIX = "pay:";
 export class PaymentError extends Error {
   constructor(
     message: string,
-    public code: "INSUFFICIENT_FUNDS" | "RATE_LIMIT" | "RECIPIENT_NOT_FOUND" | "SHOP_NOT_FOUND" | "ACCOUNT_NOT_READY" | "DUPLICATE" | "INTERNAL",
+    public code:
+      | "INSUFFICIENT_FUNDS"
+      | "RATE_LIMIT"
+      | "RECIPIENT_NOT_FOUND"
+      | "RECIPIENT_NOT_ACTIVE"
+      | "SHOP_NOT_FOUND"
+      | "ACCOUNT_NOT_READY"
+      | "DUPLICATE"
+      | "INVALID_ADDRESS"
+      | "SELF_ADDRESS"
+      | "INTERNAL",
   ) {
     super(message);
     this.name = "PaymentError";
@@ -102,7 +114,7 @@ async function checkRateLimits(userId: string) {
     .where(
       and(
         eq(transactions.userId, userId),
-        inArray(transactions.type, ["p2p", "gift", "purchase"]),
+        inArray(transactions.type, ["p2p", "gift", "purchase", "withdrawal"]),
         gt(transactions.createdAt, startOfDay),
       ),
     );
@@ -164,6 +176,7 @@ export type ExecutePaymentInput = {
   type: TransactionType;
   source: PaymentSource;
   recipientUserId?: string;
+  destinationAddress?: string;
   shopId?: string;
   memo?: string;
   table?: string;
@@ -183,8 +196,24 @@ export type PaymentResult = {
 };
 
 export async function executePayment(input: ExecutePaymentInput): Promise<PaymentResult> {
-  const sender = await getStellarAccountSecret(input.userId);
-  return withAccountLock(sender.publicKey, () => executePaymentUnlocked(input, sender));
+  return withAccountLock(`user:${input.userId}`, async () => {
+    const sender = await activateSender(input.userId);
+    return executePaymentUnlocked(input, sender);
+  });
+}
+
+async function activateSender(userId: string): Promise<{ publicKey: string; secretKey: string }> {
+  await ensureStellarAccount(userId);
+  try {
+    return await getStellarAccountSecret(userId);
+  } catch {
+    await retryAccountFunding(userId);
+    try {
+      return await getStellarAccountSecret(userId);
+    } catch {
+      throw new PaymentError("Stellar account is not ready", "ACCOUNT_NOT_READY");
+    }
+  }
 }
 
 async function executePaymentUnlocked(
@@ -197,8 +226,10 @@ async function executePaymentUnlocked(
 
   const isP2P = input.type === "p2p" || input.type === "gift";
   const isPurchase = input.type === "purchase";
+  const isExternal = Boolean(input.destinationAddress);
 
   let recipientUserId: string | undefined;
+  let paysToExternal = false;
   let destinationPublicKey: string;
   let shop: (typeof coffeeShops.$inferSelect) | null = null;
   let shopId: string | null | undefined = input.shopId;
@@ -216,6 +247,23 @@ async function executePaymentUnlocked(
     const shopOwner = await getStellarAccountSecret(shop.merchantId);
     destinationPublicKey = shopOwner.publicKey;
     shopId = shop.id;
+  } else if (isExternal) {
+    if (!(await isValidStellarAddress(input.destinationAddress!))) {
+      throw new PaymentError("Invalid destination address", "INVALID_ADDRESS");
+    }
+    if (input.destinationAddress === sender.publicKey) {
+      throw new PaymentError("Cannot send to your own account", "SELF_ADDRESS");
+    }
+    destinationPublicKey = input.destinationAddress!;
+    shopId = null;
+    const matched = await db
+      .select()
+      .from(stellarAccounts)
+      .where(eq(stellarAccounts.publicKey, destinationPublicKey))
+      .limit(1);
+    if (matched[0]?.status === "active") {
+      recipientUserId = matched[0].userId;
+    }
   } else if (input.recipientUserId) {
     const recipients = await db
       .select()
@@ -228,7 +276,22 @@ async function executePaymentUnlocked(
     if (recipients[0].id === input.userId) {
       throw new PaymentError("Cannot send to yourself", "RECIPIENT_NOT_FOUND");
     }
-    const recipientAccount = await getStellarAccountSecret(recipients[0].id);
+    let recipientAccount: { publicKey: string; secretKey: string };
+    try {
+      recipientAccount = await getStellarAccountSecret(recipients[0].id);
+    } catch {
+      const linked = await db
+        .select()
+        .from(walletLinks)
+        .where(eq(walletLinks.userId, recipients[0].id))
+        .orderBy(asc(walletLinks.createdAt))
+        .limit(1);
+      if (!linked[0]) {
+        throw new PaymentError("Recipient has no active wallet", "RECIPIENT_NOT_ACTIVE");
+      }
+      recipientAccount = { publicKey: linked[0].publicKey, secretKey: "" };
+      paysToExternal = true;
+    }
     destinationPublicKey = recipientAccount.publicKey;
     recipientUserId = recipients[0].id;
   } else {
@@ -343,27 +406,28 @@ async function executePaymentUnlocked(
     if (isPurchase && shopId) {
       await applyBalanceDelta(null, shopId, input.amount);
     }
-    if (recipientUserId) {
+    if (recipientUserId && !paysToExternal) {
       await applyBalanceDelta(recipientUserId, null, input.amount);
     }
-    if (recipientUserId && input.userId !== recipientUserId) {
+    if (recipientUserId && !isExternal && !paysToExternal && input.userId !== recipientUserId) {
       await upsertContact(input.userId, recipientUserId);
     }
   }
 
   await writeAudit({
     actorUserId: input.userId,
-    action: isPurchase ? "payment.create" : "payment.send",
+    action: isPurchase ? "payment.create" : isExternal ? "payment.withdrawal" : "payment.send",
     entity: "transactions",
     entityId: inserted.id,
     metadata: {
-      action: isPurchase ? "purchase" : isP2P ? "p2p" : input.type,
+      action: isPurchase ? "purchase" : isExternal ? "withdrawal" : isP2P ? "p2p" : input.type,
       cups: isPurchase ? Number(input.amount) : undefined,
       amount: amountStr,
       shop: shopId ?? undefined,
       table: input.table ?? undefined,
       source: input.source,
       recipient: recipientUserId ?? undefined,
+      destination: isExternal || paysToExternal ? destinationPublicKey : undefined,
       status,
     },
   });

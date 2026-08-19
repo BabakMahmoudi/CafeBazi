@@ -37,6 +37,11 @@ export async function generateKeypair(): Promise<{ publicKey: string; secretKey:
   return { publicKey: keypair.publicKey(), secretKey: keypair.secret() };
 }
 
+export async function isValidStellarAddress(address: string): Promise<boolean> {
+  const s = await sdk();
+  return s.StrKey.isValidEd25519PublicKey(address);
+}
+
 export async function createFundedAccount(publicKey: string): Promise<void> {
   if (env.STELLAR_NETWORK !== "testnet") {
     throw new Error("createFundedAccount is only available on the Stellar testnet (Friendbot)");
