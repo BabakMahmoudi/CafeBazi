@@ -2,29 +2,14 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { retrieveRawInitData } from "@telegram-apps/sdk-react";
 import { trpc } from "@/lib/trpc/client";
+import { isRealTelegramWebView, readInitData } from "@/lib/wallet-providers";
 import { Link } from "@/i18n/navigation";
-import { telegramMockState } from "./telegram-provider";
 import { WebLogin } from "./web-login";
 import { BalanceCard } from "./balance-card";
 import { TransactionsList } from "./transactions-list";
 
 type AuthState = "checking" | "guest" | "ready";
-
-function readInitData(): string | undefined {
-  if (typeof window === "undefined") {
-    return undefined;
-  }
-  try {
-    const webAppInitData = (
-      window as Window & { Telegram?: { WebApp?: { initData?: string } } }
-    ).Telegram?.WebApp?.initData;
-    return webAppInitData || retrieveRawInitData();
-  } catch {
-    return undefined;
-  }
-}
 
 export function OnboardingGate() {
   const t = useTranslations();
@@ -44,13 +29,13 @@ export function OnboardingGate() {
         ? "guest"
         : "ready";
 
-  const insideTelegram = Boolean(initData) && !telegramMockState.mocked;
+  const insideTelegram = isRealTelegramWebView();
 
   async function startOnboarding() {
     setAuthError(null);
     setSubmitting(true);
     try {
-      if (!initData || telegramMockState.mocked) {
+      if (!initData || !insideTelegram) {
         setAuthError(t("onboarding.openInTelegram"));
         return;
       }

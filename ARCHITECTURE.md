@@ -274,27 +274,29 @@ Admin-only page at `/admin` (`src/app/[locale]/admin/page.tsx`), backed by the `
 - **Add** (`admin.users.create`): inserts a `users` row, creates a custodial Stellar account via `ensureStellarAccount` (keypair + testnet funding; `pending_funding` on funding failure/mainnet until Phase 6), and ensures a zero `balances` row. `telegramId` is optional at create — when omitted the service stores a `manual-<uuid>` placeholder, so the user cannot sign in via Telegram but can hold/receive TAK.
 - **Edit** (`admin.users.update`): changes `firstName`, `telegramUsername`, `phone` (nullable to clear), and `role`. `telegramId` is immutable (set only at create). Guard rails: an admin cannot demote themselves, and the last remaining admin cannot be demoted.
 
-### 7.11 Web sign-in (SEP-10 / Freighter) and linked wallets
+### 7.11 Web sign-in (SEP-10 / Freighter + Albedo) and linked wallets
 
 ```text
-Browser (Freighter)      /api/auth/stellar/*        Neon             Stellar
-   │ requestAccess           │                        │                 │
-   │───────────────────────>│ issue challenge         │                 │
-   │ challenge XDR          │  (buildChallengeTx +    │                 │
-   │<───────────────────────│   memo nonce, 5 min TTL)│───────────────>│
-   │ signTransaction        │                        │                 │
-   │───────────────────────>│ verify (single-use,     │                 │
-   │  (from client)         │  readChallengeTx +      │                 │
-   │                        │  verifyChallengeTxSigners)               │
-   │                        │ consume challenge row   │───────────────>│
-   │                        │ resolveStellarLogin     │                │
-   │  JWT httpOnly cookie   │  (wallet_links → user)  │                │
-   │<───────────────────────│                        │                 │
+Browser (Freighter / Albedo)   /api/auth/stellar/*        Neon             Stellar
+   │ getPublicKey                  │                        │                 │
+   │───────────────────────>       │ issue challenge         │                 │
+   │ challenge XDR                 │  (buildChallengeTx +    │                 │
+   │<───────────────────────       │   memo nonce, 5 min TTL)│───────────────>│
+   │ sign challenge                │                        │                 │
+   │───────────────────────>       │ verify (single-use,     │                 │
+   │  (from client)                │  readChallengeTx +      │                 │
+   │                               │  verifyChallengeTxSigners)               │
+   │                               │ consume challenge row   │───────────────>│
+   │                               │ resolveStellarLogin     │                │
+   │  JWT httpOnly cookie          │  (wallet_links → user)  │                │
+   │<───────────────────────       │                        │                 │
 ```
 
-Steps: the client asks Freighter for access and reads the active public key → `POST /api/auth/stellar/challenge` returns a SEP-10 challenge XDR (built for that public key, memo = uint64 nonce, `web_auth_domain` = app hostname) plus the server-known `networkPassphrase` → Freighter signs the challenge with the wallet's key (`signTransaction(xdr, { networkPassphrase })`) → `POST /api/auth/stellar/verify` re-derives the identity from the challenge's **source account** (never a client-supplied address), verifies the signature, atomically marks the challenge `used`, and resolves the user: existing `wallet_links` row → that user, else a new web user (`telegramId = web-<uuid>`, short-form `GABC…XYZ` name) with the wallet linked and a zero `balances` row → JWT cookie.
+Steps: the client asks the connected wallet for access (`getWalletProviders()` in `src/lib/wallet-providers.ts` exposes **Freighter** — desktop browser extension — and **Albedo** — browser popup intent that works on phones too; Lobstr is deferred) and reads the active public key → `POST /api/auth/stellar/challenge` returns a SEP-10 challenge XDR (built for that public key, memo = uint64 nonce, `web_auth_domain` = app hostname) plus the server-known `networkPassphrase` → the wallet signs the challenge (Freighter `signTransaction`, Albedo `tx` intent with a passphrase→network map) → `POST /api/auth/stellar/verify` re-derives the identity from the challenge's **source account** (never a client-supplied address), verifies the signature, atomically marks the challenge `used`, and resolves the user: existing `wallet_links` row → that user, else a new web user (`telegramId = web-<uuid>`, short-form `GABC…XYZ` name) with the wallet linked and a zero `balances` row → JWT cookie.
 
 Web-only users get their **custodial account lazily**: `executePayment` calls `ensureStellarAccount` + `retryAccountFunding` on first in-app spend (buy, send, withdrawal). No XLM is spent at sign-in. If the account can't be funded (e.g. mainnet), the payment fails with `ACCOUNT_NOT_READY` and the UI surfaces a retry CTA.
+
+Wallet popups and browser extensions do not work inside the Telegram WebView, so the client hides provider buttons in a real MiniApp and falls back to Telegram auth, with an **open-in-browser** path (`openLink` from `@telegram-apps/sdk-react`) on the wallets page for external wallet management in the phone's browser. The dev mock (non-TMA browser) keeps showing both provider buttons (`isBrowserContext()`/`getWalletProviders()` in `src/lib/wallet-providers.ts`).
 
 **Linking a wallet** (authenticated, via tRPC `wallets.link*`) runs the same challenge/verify flow with `purpose: "link"`, then inserts the `wallet_links` row. Unlink is blocked when it would strip a web-only user of their last sign-in method. Sending to a web-only recipient with a verified linked wallet pays the linked address directly (external bookkeeping: no cached-balance credit, no contact row); recipients with neither get `RECIPIENT_NOT_ACTIVE` before any transaction is built.
 
@@ -435,7 +437,7 @@ cafe-bazi/
 | `TAK_ISSUER_PUBLIC_KEY` | server | TAK issuer public key (from `scripts/setup-testnet.ts`) |
 | `CRON_SECRET` | server | Bearer secret guarding `/api/cron/lottery` |
 | `JWT_SECRET` | server | JWT signing secret for the MiniApp session cookie (httpOnly) |
-| `SEP10_SIGNING_KEY` | server | SEP-10 signing key for Stellar Web Authentication (Freighter login/link). Its public key is derived at runtime and must match the `NEXT_PUBLIC_APP_URL` hostname; it must never equal a custodial user account (§7.11) |
+| `SEP10_SIGNING_KEY` | server | SEP-10 signing key for Stellar Web Authentication (Freighter/Albedo login/link). Its public key is derived at runtime and must match the `NEXT_PUBLIC_APP_URL` hostname; it must never equal a custodial user account (§7.11) |
 | `NEXT_PUBLIC_APP_URL` | both | Public base URL of the app; its hostname is the SEP-10 home/web-auth domain |
 
 ## 13. Observability

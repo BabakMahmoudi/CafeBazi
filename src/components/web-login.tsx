@@ -2,8 +2,12 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { requestAccess, signTransaction } from "@stellar/freighter-api";
 import { trpc } from "@/lib/trpc/client";
+import {
+  getWalletProviders,
+  UnsupportedNetworkError,
+  type StellarWalletProvider,
+} from "@/lib/wallet-providers";
 
 type WebLoginProps = {
   onSuccess?: () => void;
@@ -12,6 +16,7 @@ type WebLoginProps = {
 type LoginError =
   | "notInstalled"
   | "rejected"
+  | "notSupported"
   | "challengeFailed"
   | "verifyFailed"
   | "rateLimited"
@@ -29,23 +34,33 @@ type VerifyResponse = {
   error?: string;
 };
 
+const BUTTON_LABELS: Record<StellarWalletProvider["id"], string> = {
+  freighter: "providers.freighter",
+  albedo: "providers.albedo",
+};
+
 export function WebLogin({ onSuccess }: WebLoginProps) {
   const t = useTranslations("webLogin");
   const utils = trpc.useUtils();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<LoginError | null>(null);
 
-  async function signIn() {
+  async function signInWith(provider: StellarWalletProvider) {
     setError(null);
     setSubmitting(true);
     try {
-      if (typeof window === "undefined" || !(window as Window & { freighter?: boolean }).freighter) {
+      if (
+        provider.id === "freighter" &&
+        (typeof window === "undefined" || !(window as Window & { freighter?: boolean }).freighter)
+      ) {
         setError("notInstalled");
         return;
       }
 
-      const access = await requestAccess();
-      if (access.error || !access.address) {
+      let address: string;
+      try {
+        address = await provider.getPublicKey();
+      } catch {
         setError("rejected");
         return;
       }
@@ -55,7 +70,7 @@ export function WebLogin({ onSuccess }: WebLoginProps) {
         challengeRes = await fetch("/api/auth/stellar/challenge", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ publicKey: access.address, purpose: "login" }),
+          body: JSON.stringify({ publicKey: address, purpose: "login" }),
         });
       } catch {
         setError("challengeFailed");
@@ -69,16 +84,24 @@ export function WebLogin({ onSuccess }: WebLoginProps) {
         challengeBody = null;
       }
 
-      if (!challengeRes.ok || !challengeBody?.ok || !challengeBody.challengeXdr) {
+      if (
+        !challengeRes.ok ||
+        !challengeBody?.ok ||
+        !challengeBody.challengeXdr ||
+        !challengeBody.networkPassphrase
+      ) {
         setError(challengeBody?.error === "rate_limit" ? "rateLimited" : "challengeFailed");
         return;
       }
 
-      const signed = await signTransaction(challengeBody.challengeXdr, {
-        networkPassphrase: challengeBody.networkPassphrase,
-      });
-      if (signed.error || !signed.signedTxXdr) {
-        setError("rejected");
+      let signedXdr: string;
+      try {
+        signedXdr = await provider.signChallenge(
+          challengeBody.challengeXdr,
+          challengeBody.networkPassphrase,
+        );
+      } catch (err) {
+        setError(err instanceof UnsupportedNetworkError ? "notSupported" : "rejected");
         return;
       }
 
@@ -87,7 +110,7 @@ export function WebLogin({ onSuccess }: WebLoginProps) {
         verifyRes = await fetch("/api/auth/stellar/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ signedChallengeXdr: signed.signedTxXdr, purpose: "login" }),
+          body: JSON.stringify({ signedChallengeXdr: signedXdr, purpose: "login" }),
         });
       } catch {
         setError("verifyFailed");
@@ -118,16 +141,24 @@ export function WebLogin({ onSuccess }: WebLoginProps) {
     }
   }
 
+  const providers = getWalletProviders();
+  if (providers.length === 0) {
+    return null;
+  }
+
   return (
     <div className="flex flex-col gap-2">
-      <button
-        type="button"
-        onClick={signIn}
-        disabled={submitting}
-        className="rounded-xl bg-accent px-4 py-3 font-semibold text-white disabled:opacity-40"
-      >
-        {submitting ? t("loading") : t("button")}
-      </button>
+      {providers.map((provider) => (
+        <button
+          key={provider.id}
+          type="button"
+          onClick={() => signInWith(provider)}
+          disabled={submitting}
+          className="rounded-xl bg-accent px-4 py-3 font-semibold text-white disabled:opacity-40"
+        >
+          {submitting ? t("loading") : t(BUTTON_LABELS[provider.id])}
+        </button>
+      ))}
       {error && (
         <p className="rounded-xl bg-red-100 p-3 text-sm text-red-900">{t(error)}</p>
       )}

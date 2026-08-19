@@ -2,17 +2,29 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { requestAccess, signTransaction } from "@stellar/freighter-api";
+import { openLink } from "@telegram-apps/sdk-react";
 import { trpc } from "@/lib/trpc/client";
+import {
+  getWalletProviders,
+  isBrowserContext,
+  UnsupportedNetworkError,
+  type StellarWalletProvider,
+} from "@/lib/wallet-providers";
 
 type WalletError =
   | "notInstalled"
   | "rejected"
+  | "notSupported"
   | "challengeFailed"
   | "alreadyLinked"
   | "lastWallet"
   | "custodialKey"
   | "generic";
+
+const ADD_LABELS: Record<StellarWalletProvider["id"], string> = {
+  freighter: "addFreighter",
+  albedo: "addAlbedo",
+};
 
 function typedCode(error: unknown): string | undefined {
   return (error as { data?: { typedCode?: string } } | null)?.data?.typedCode;
@@ -27,7 +39,7 @@ export function WalletsManager() {
   const unlink = trpc.wallets.unlink.useMutation();
   const logout = trpc.session.logout.useMutation();
 
-  const [adding, setAdding] = useState(false);
+  const [addingProvider, setAddingProvider] = useState<string | null>(null);
   const [removingKey, setRemovingKey] = useState<string | null>(null);
   const [error, setError] = useState<WalletError | null>(null);
 
@@ -44,31 +56,40 @@ export function WalletsManager() {
     }
   }
 
-  async function addWallet() {
+  async function linkWalletWith(provider: StellarWalletProvider) {
     setError(null);
-    setAdding(true);
+    setAddingProvider(provider.id);
     try {
-      if (typeof window === "undefined" || !(window as Window & { freighter?: boolean }).freighter) {
+      if (
+        provider.id === "freighter" &&
+        (typeof window === "undefined" || !(window as Window & { freighter?: boolean }).freighter)
+      ) {
         setError("notInstalled");
         return;
       }
 
-      const access = await requestAccess();
-      if (access.error || !access.address) {
+      let address: string;
+      try {
+        address = await provider.getPublicKey();
+      } catch {
         setError("rejected");
         return;
       }
 
-      const challenge = await linkStart.mutateAsync({ publicKey: access.address });
-      const signed = await signTransaction(challenge.challengeXdr, {
-        networkPassphrase: challenge.networkPassphrase,
-      });
-      if (signed.error || !signed.signedTxXdr) {
-        setError("rejected");
+      const challenge = await linkStart.mutateAsync({ publicKey: address });
+
+      let signedXdr: string;
+      try {
+        signedXdr = await provider.signChallenge(
+          challenge.challengeXdr,
+          challenge.networkPassphrase,
+        );
+      } catch (err) {
+        setError(err instanceof UnsupportedNetworkError ? "notSupported" : "rejected");
         return;
       }
 
-      await linkVerify.mutateAsync({ signedChallengeXdr: signed.signedTxXdr });
+      await linkVerify.mutateAsync({ signedChallengeXdr: signedXdr });
       await utils.wallets.list.invalidate();
     } catch (err) {
       const code = typedCode(err);
@@ -82,7 +103,7 @@ export function WalletsManager() {
         setError("generic");
       }
     } finally {
-      setAdding(false);
+      setAddingProvider(null);
     }
   }
 
@@ -107,6 +128,9 @@ export function WalletsManager() {
   if (wallets.isPending) {
     return <p className="opacity-60">{t("loading")}</p>;
   }
+
+  const browserContext = isBrowserContext();
+  const providers = browserContext ? getWalletProviders() : [];
 
   return (
     <div className="flex flex-col gap-4">
@@ -145,14 +169,30 @@ export function WalletsManager() {
 
       {error && <p className="rounded-xl bg-red-100 p-3 text-sm text-red-900">{t(error)}</p>}
 
-      <button
-        type="button"
-        onClick={addWallet}
-        disabled={adding}
-        className="rounded-xl border border-accent px-4 py-3 font-semibold text-accent disabled:opacity-40"
-      >
-        {adding ? t("adding") : t("add")}
-      </button>
+      {browserContext ? (
+        providers.map((provider) => (
+          <button
+            key={provider.id}
+            type="button"
+            onClick={() => linkWalletWith(provider)}
+            disabled={addingProvider !== null}
+            className="rounded-xl border border-accent px-4 py-3 font-semibold text-accent disabled:opacity-40"
+          >
+            {addingProvider === provider.id ? t("adding") : t(ADD_LABELS[provider.id])}
+          </button>
+        ))
+      ) : (
+        <div className="rounded-2xl bg-amber-50 p-4 text-sm shadow-sm">
+          <p>{t("phoneHint")}</p>
+          <button
+            type="button"
+            onClick={() => openLink(window.location.href)}
+            className="mt-3 rounded-xl bg-accent px-4 py-2.5 font-semibold text-white"
+          >
+            {t("openInBrowser")}
+          </button>
+        </div>
+      )}
       {error === "notInstalled" && (
         <a
           href="https://freighter.app"

@@ -15,7 +15,7 @@ A community coffee-coin for Farmahin, Iran — a custodial Stellar wallet as a T
 ## Features (implemented)
 
 - Telegram MiniApp wallet — the community already uses Telegram, so no app install
-- Web login — sign in from a browser with any Stellar wallet (SEP-10, Freighter first) and link external wallets as withdrawal destinations
+- Web login — sign in from a browser with any Stellar wallet (SEP-10): Freighter on desktop, Albedo in any browser, and on mobile you open the page in your phone's browser; link external wallets as withdrawal destinations
 - Custodial per-user Stellar accounts (testnet-first; mainnet path documented)
 - Pay for coffee in TAK with a "brewing" pending animation
 - Gift TAK to friends — recipient picker (username search + recents) inside the MiniApp; gifts to web-only users land in their linked external wallet
@@ -91,7 +91,7 @@ pnpm bot:setwebhook   # registers ${NEXT_PUBLIC_APP_URL}/api/bot/webhook with se
 | `TAK_ISSUER_PUBLIC_KEY` | yes* | TAK issuer public key (from `pnpm db:testnet`) (server-only) |
 | `CRON_SECRET` | prod | Bearer secret guarding `/api/cron/lottery` (server-only) |
 | `JWT_SECRET` | yes | JWT signing secret for the MiniApp session cookie (server-only). Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` |
-| `SEP10_SIGNING_KEY` | yes | SEP-10 signing key for Stellar Web Authentication (Freighter login/link). Its public key must not be a user's custodial account (server-only). Generate: `node -e "import('@stellar/stellar-sdk').then(s => console.log(s.Keypair.random().secret()))"` |
+| `SEP10_SIGNING_KEY` | yes | SEP-10 signing key for Stellar Web Authentication (Freighter/Albedo login/link). Its public key must not be a user's custodial account (server-only). Generate: `node -e "import('@stellar/stellar-sdk').then(s => console.log(s.Keypair.random().secret()))"` |
 | `NEXT_PUBLIC_APP_URL` | yes | Public base URL of the app |
 
 \* required once any Stellar transaction runs; onboarding works in `pending_funding` without it.
