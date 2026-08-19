@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { trpc } from "@/lib/trpc/client";
 import { isRealTelegramWebView, readInitData } from "@/lib/wallet-providers";
 import { Link } from "@/i18n/navigation";
+import { PasswordAuth } from "./password-auth";
 import { WebLogin } from "./web-login";
 import { BalanceCard } from "./balance-card";
 import { TransactionsList } from "./transactions-list";
@@ -100,12 +101,25 @@ export function OnboardingGate() {
             </button>
           </>
         ) : (
-          <WebLogin
-            onSuccess={() => {
-              void wallet.refetch();
-              void role.refetch();
-            }}
-          />
+          <>
+            <WebLogin
+              onSuccess={() => {
+                void wallet.refetch();
+                void role.refetch();
+              }}
+            />
+            <div className="flex items-center gap-2 text-sm opacity-60">
+              <span className="h-px flex-1 bg-current" />
+              {t("passwordAuth.or")}
+              <span className="h-px flex-1 bg-current" />
+            </div>
+            <PasswordAuth
+              onSuccess={() => {
+                void wallet.refetch();
+                void role.refetch();
+              }}
+            />
+          </>
         )}
       </div>
     );

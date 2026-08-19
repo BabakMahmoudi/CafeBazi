@@ -97,7 +97,9 @@ Runtime: **Node 22** everywhere — `"engines": { "node": ">=22" }` in `package.
 
 ### 5.3 Identity: Telegram users, web users, and linked wallets
 
-`users.telegram_id` stays NOT NULL + UNIQUE as the identity key. Web-only visitors who sign in with Stellar Web Authentication (SEP-10) reuse the existing placeholder pattern from admin-created users: `telegramId = "web-" + crypto.randomUUID()`. They cannot be addressed via the bot/chat paths (no numeric Telegram id), which is correct.
+`users.telegram_id` stays NOT NULL + UNIQUE as the identity key. Web-only visitors who sign in with Stellar Web Authentication (SEP-10) reuse the existing placeholder pattern from admin-created users: `telegramId = "web-" + crypto.randomUUID()`. Username/password users get `telegramId = "password-" + crypto.randomUUID()`. Neither can be addressed via the bot/chat paths (no numeric Telegram id), which is correct.
+
+Usernames are a **shared community-handle namespace**: the chosen username lives in `users.telegram_username` (the same column Telegram handles use) and is enforced case-insensitively by a unique expression index (`users_telegram_username_lower_unique`, `UNIQUE (lower(telegram_username))` — Postgres ignores NULLs, so Telegram-only users without a handle are unaffected). Password usernames are stored lowercase; lookups (`getUserByUsername`) compare `lower(telegram_username)` so bot `/coffee @handle` and recipient search resolve Telegram and password users identically. Password users can receive bot `/coffee` payments by username but not via `forward_from`/reply flows (no numeric `telegram_id`).
 
 An optional **linked wallet** (`wallet_links`) is a user's own external Stellar address. It serves as:
 
@@ -121,7 +123,7 @@ Money columns are `numeric` (no decimals); the TS side is `bigint`. Enums are ch
 
 | Table | Key columns | Notes / indexes |
 |---|---|---|
-| `users` | `id`, `telegram_id`, `telegram_username`, `first_name`, `phone` (nullable, opt-in via Telegram `requestContact`), `role` (`member\|merchant\|admin`), timestamps | `UNIQUE (telegram_id)` |
+| `users` | `id`, `telegram_id`, `telegram_username`, `first_name`, `phone` (nullable, opt-in via Telegram `requestContact`), `role` (`member\|merchant\|admin`), timestamps | `UNIQUE (telegram_id)`; `UNIQUE (lower(telegram_username))` — shared Telegram + password handle namespace (§5.3) |
 | `stellar_accounts` | `id`, `user_id`, `public_key`, `encrypted_secret`, `status` | `UNIQUE (public_key)`; `FK user_id` |
 | `coffee_shops` | `id`, `merchant_id`, `slug`, `name`, `address`, `is_active` | `FK merchant_id`; `UNIQUE (slug)` — the short public id encoded in QR `start_param` payloads (`s3` → `slug = '3'`) |
 | `transactions` | `id`, `tx_hash`, `type` (`purchase\|p2p\|gift\|mint\|burn\|redemption\|withdrawal\|lottery`), `status` (`pending\|submitted\|confirmed\|failed`), `amount` (numeric), `from_account`, `to_account`, `memo`, `user_id`, `shop_id`, timestamps | `UNIQUE (tx_hash)` — idempotency key; `idx (user_id, created_at)` |
@@ -135,6 +137,8 @@ Money columns are `numeric` (no decimals); the TS side is `bigint`. Enums are ch
 | `redemptions` | `id`, `shop_id`, `amount_tak`, `beans_grams`, `status`, `admin_id`, `created_at` | Shop coins → beans |
 | `wallet_links` | `id`, `user_id`, `public_key`, `source` (`stellar`), `label` (nullable), `verified_at`, `created_at` | User's own external Stellar wallets; `UNIQUE (public_key)` (identity mapping, one wallet = one user); `idx (user_id)` |
 | `auth_challenges` | `id`, `public_key`, `nonce` (uint64 memo), `purpose` (`login\|link`), `status` (`pending\|used\|expired`), `expires_at`, `created_at` | SEP-10 challenges; `UNIQUE (nonce)` (single-use), `idx (status)`, `idx (public_key)` |
+| `auth_credentials` | `id`, `user_id`, `username` (lowercase), `password_hash` (scrypt), `failed_attempts`, `locked_until` (nullable), `password_changed_at`, timestamps | Username/password sign-in (§7.12); `UNIQUE (user_id)` (one credential set per user), `UNIQUE (username)` |
+| `telegram_codes` | `id`, `user_id`, `code_hash` (hex SHA-256 — never plaintext), `attempts`, `status` (`pending\|used\|expired`), `expires_at`, `consumed_at`, `created_at` | Telegram code sign-in (§7.13); one active `pending` code per user — a new request expires the previous one; `idx (user_id, status)`, `idx (user_id, created_at)` |
 | `audit_log` | `id`, `actor_user_id`, `action`, `entity`, `entity_id`, `metadata` (jsonb), `created_at` | Append-only; every mint/burn/redemption/admin action. `metadata` records structured intent context (e.g. `{action, cups, shop, table, source}`) — the future AI/LLM grounding dataset (§16.3.4) |
 
 ## 7. Key flows
@@ -300,6 +304,53 @@ Wallet popups and browser extensions do not work inside the Telegram WebView, so
 
 **Linking a wallet** (authenticated, via tRPC `wallets.link*`) runs the same challenge/verify flow with `purpose: "link"`, then inserts the `wallet_links` row. Unlink is blocked when it would strip a web-only user of their last sign-in method. Sending to a web-only recipient with a verified linked wallet pays the linked address directly (external bookkeeping: no cached-balance credit, no contact row); recipients with neither get `RECIPIENT_NOT_ACTIVE` before any transaction is built.
 
+### 7.12 Username/password sign-up and sign-in
+
+```text
+Browser (outside Telegram)   /api/auth/password/*       Neon            Stellar
+   │ username + password          │                       │                │
+   │ signup ─────────────────────>│ normalize + validate  │                │
+   │                              │ scrypt hash           │                │
+   │                              │ insert users          │───────────────>│
+   │                              │ (telegramId=password-<uuid>,            │
+   │                              │  handle=lower(username))                │
+   │                              │ insert auth_credentials│               │
+   │                              │ insert balances (0)   │               │
+   │                              │ eager custodial acct  │───────────────>│
+   │                              │ audit_log auth.signup │               │
+   │  JWT httpOnly cookie         │                       │                │
+   │<─────────────────────────────│                       │                │
+   │ signin ─────────────────────>│ lookup lower(username)│                │
+   │                              │ verify scrypt,        │                │
+   │                              │ lockout on 5 fails    │                │
+   │  JWT httpOnly cookie         │                       │                │
+   │<─────────────────────────────│                       │                │
+```
+
+Steps (sign-up): validate/normalize the username (`/^[a-z0-9_]{5,32}$/`, lowercase) → enforce the password policy (min 8, max 128) → hash with scrypt (per-user 16-byte salt, `N=16384 r=8 p=1`, stored `scrypt$N$r$p$salt$hash`) → insert a `users` row with the `password-<uuid>` placeholder identity and the username as the public handle → insert the `auth_credentials` row → insert a zero `balances` row → create/fund the custodial Stellar account **eagerly** (`ensureStellarAccount`, exactly like the TMA route) so the user can buy/send immediately → write an `audit_log` `auth.signup` entry → set the JWT cookie. Any duplicate-key error (the `auth_credentials.username` unique or the `users` lowercase-handle index colliding with a Telegram user) is caught and reported as `USERNAME_TAKEN` — never a pre-check, because a race between check and insert is possible.
+
+Steps (sign-in): look up `auth_credentials` by the normalized username (unknown username returns the same generic `INVALID_CREDENTIALS` as a wrong password — no user enumeration) → refuse while `locked_until > now` → verify the password with a timing-safe compare → on failure increment `failed_attempts`; on the 5th failure set `locked_until = now + 15 min` and reset the counter → on success reset the counter and load the `users` row → set the JWT cookie. The response mirrors `/api/auth/tma` (`{ ok, user, accountStatus }`) so the client can show the existing `pending_funding` notice.
+
+The client shows this form in the guest branch only outside Telegram (`!insideTelegram`), alongside the SEP-10 wallet login with an "or" divider (`src/components/password-auth.tsx` + `onboarding-gate.tsx`).
+
+### 7.13 Telegram code sign-in (passwordless web login)
+
+```text
+Browser (outside Telegram)   /api/auth/telegram-code/*    Bot + Neon
+   │ username ───────────────> resolve username → users   │
+   │                          (numeric telegram_id only)  │
+   │                          rate limit (3/15 min, 60s)  │
+   │                          store sha256(code), 10 min  │
+   │                          send code via bot DM ──────>│
+   │ <── code arrives ───────                             │
+   │ username + code ────────> timing-safe compare,       │
+   │                          single-use, 5 attempts max  │
+   │  JWT httpOnly cookie     audit auth.code_verified   │
+   │<─────────────────────────                            │
+```
+
+Steps: the user enters a username that belongs to a Telegram-linked account (numeric `telegram_id` — TMA users and admin-created users with a numeric id) → `requestTelegramCode` resolves the user, applies per-user rate limits (≤3 codes / 15 min, 60 s resend cooldown), invalidates any previous `pending` code, stores `sha256(code)` with a 10-minute TTL, and DMs the 6-digit code via the bot → `verifyTelegramCode` compares timing-safe with ≤5 attempts per code and marks the code single-use on success, and the route issues the same JWT session as password sign-in. A Telegram API "can't initiate conversation" failure maps to `BOT_NOT_STARTED` — the user must open the bot and press Start (the bot answers `/start` with a welcome). The signup route reports `codeLoginAvailable` when the entered username collides with a Telegram-addressable account, so the client offers this flow instead of the `USERNAME_TAKEN` dead end (§7.12).
+
 ## 8. API reference (tRPC procedures + plain Route Handlers)
 
 The internal API is a **tRPC router** (`src/server/trpc/root.ts`) mounted at `/api/trpc`. Client calls are type-inferred from `AppRouter`, so the tables below are the server-side contract. Every procedure is input-validated with a Zod schema and guarded by `protectedProcedure` (JWT session) or `adminProcedure` (JWT + `role = admin`); see §10.
@@ -346,6 +397,10 @@ Called by parties outside the MiniApp client (Telegram webview, Telegram Bot API
 | POST | `/api/auth/tma` | initData | Verify initData; upsert user; create/fund account; issue JWT |
 | POST | `/api/auth/stellar/challenge` | public | Issue a SEP-10 login challenge (`{ publicKey, purpose: "login" }`); returns XDR + `networkPassphrase` (§7.11) |
 | POST | `/api/auth/stellar/verify` | public | Verify a signed login challenge; resolve/create the user; issue JWT (§7.11) |
+| POST | `/api/auth/password/signup` | public | Username/password sign-up: validate, hash, create user + credential + zero balance + eager custodial account; issue JWT (§7.12) |
+| POST | `/api/auth/password/signin` | public | Username/password sign-in: verify credential with per-username lockout; issue JWT (§7.12) |
+| POST | `/api/auth/telegram-code/request` | public | Request a one-time Telegram code for a Telegram-linked username (per-user rate-limited; `BOT_NOT_STARTED` → 409) (§7.13) |
+| POST | `/api/auth/telegram-code/verify` | public | Verify the code (timing-safe, ≤5 attempts) and issue JWT (§7.13) |
 | POST | `/api/bot/webhook` | `TELEGRAM_BOT_TOKEN` (update signature) | Telegram update handler: forward-to-pay, reply-to-pay, command-style payments (§7.9) |
 | GET | `/api/health` | public | Liveness probe |
 | POST | `/api/cron/lottery` | `CRON_SECRET` + cron signature | Weekly lottery draw — **built in Phase 4** (roadmap), reserved here |
@@ -362,6 +417,7 @@ cafe-bazi/
 │  │  │  ├─ trpc/[trpc]/route.ts   # tRPC HTTP handler (fetch adapter, §8)
 │  │  │  ├─ auth/tma/route.ts      # plain handler: initData → JWT cookie (§8.2)
 │  │  │  ├─ auth/stellar/          # plain handlers: SEP-10 login challenge/verify (§7.11, §8.2)
+│  │  │  ├─ auth/password/         # plain handlers: username/password signup/signin (§7.12, §8.2)
 │  │  │  ├─ bot/webhook/route.ts   # plain handler: Telegram updates → chat payments (§7.9, §8.2)
 │  │  │  ├─ cron/lottery/route.ts  # plain handler: weekly draw (§8.2)
 │  │  │  └─ health/route.ts        # public liveness probe (§8.2)
@@ -387,7 +443,8 @@ cafe-bazi/
 
 ## 10. Security model
 
-- **Auth:** initData HMAC-validated server-side with `@tma.js/init-data-node` using `TELEGRAM_BOT_TOKEN`; never trust client-side `window.Telegram.WebApp.initData` alone. **SEP-10 (web) auth** uses the SDK's `WebAuth` helpers: the identity is the challenge's **source account** read from the signed transaction (`readChallengeTx`) — never a client-supplied address in the verify body — and signatures are checked against that address with `verifyChallengeTxSigners`. Challenges are **single-use** (uint64 memo nonce + `auth_challenges` row consumed by a guarded `pending → used` update), have a 5-minute TTL, and are rate-limited (≤10 pending/hour per public key). Challenges and wallet links are rejected for the SEP-10 server key and any custodial `stellar_accounts` address. Linking a wallet requires the same signed-challenge proof of ownership; `wallet_links.public_key` is UNIQUE so one wallet maps to one user. A web-only user cannot unlink their last wallet (their only sign-in method). Session = signed JWT in an httpOnly cookie, resolved once into the tRPC context; `protectedProcedure` / `adminProcedure` middleware enforce membership and `role = admin` on every procedure. Plain handlers (§8.2) re-check the cookie or `CRON_SECRET` directly.
+- **Auth:** initData HMAC-validated server-side with `@tma.js/init-data-node` using `TELEGRAM_BOT_TOKEN`; never trust client-side `window.Telegram.WebApp.initData` alone. **SEP-10 (web) auth** uses the SDK's `WebAuth` helpers: the identity is the challenge's **source account** read from the signed transaction (`readChallengeTx`) — never a client-supplied address in the verify body — and signatures are checked against that address with `verifyChallengeTxSigners`. Challenges are **single-use** (uint64 memo nonce + `auth_challenges` row consumed by a guarded `pending → used` update), have a 5-minute TTL, and are rate-limited (≤10 pending/hour per public key). Challenges and wallet links are rejected for the SEP-10 server key and any custodial `stellar_accounts` address. Linking a wallet requires the same signed-challenge proof of ownership; `wallet_links.public_key` is UNIQUE so one wallet maps to one user. A web-only user cannot unlink their last wallet (their only sign-in method). **Username/password auth** hashes with scrypt (per-user random 16-byte salt, `N=16384 r=8 p=1`, stored as `scrypt$N$r$p$salt$hash`; timing-safe compare on verify), enforces a per-username brute-force lockout (5 failed attempts → 15 minutes), and returns a single generic `INVALID_CREDENTIALS` for both unknown usernames and wrong passwords to prevent user enumeration. Duplicate usernames are rejected by DB unique constraints (catch-and-return), not a pre-check. Password users get their custodial account eagerly at signup (unlike lazy web users) so they can pay immediately. Session = signed JWT in an httpOnly cookie, resolved once into the tRPC context; `protectedProcedure` / `adminProcedure` middleware enforce membership and `role = admin` on every procedure. Plain handlers (§8.2) re-check the cookie or `CRON_SECRET` directly.
+- **Telegram code auth:** the one-time code is the credential — a passwordless replacement for Telegram-linked accounts. Only SHA-256 hashes of codes are stored (never plaintext, never returned or logged); verification is timing-safe with a ≤5-attempt cap per code and a per-user send rate limit (3 codes / 15 min, 60 s resend cooldown). Codes are single-use with a 10-minute TTL; a new request invalidates the previous pending code. Recipient resolution is server-side only (username → numeric `telegram_id`); session issuance is identical to password sign-in. A user who has not started the bot gets `BOT_NOT_STARTED` instead of silently retrying.
 - **Custody:** private keys encrypted with AES-256-GCM; master key in `KEY_ENCRYPTION_KEY` (Vercel env, never committed). No private material in client bundles.
 - **Idempotency:** payment code relies on the DB unique `transactions.tx_hash` and the status machine `pending → submitted → confirmed | failed`; a reconciliation job resolves stuck `submitted` rows against Soroban RPC (SEP-41 contract mode; Horizon fallback for classic transactions).
 - **Isolation:** Stellar and DB modules are `server-only`; route handlers stay light.

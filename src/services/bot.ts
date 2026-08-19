@@ -77,6 +77,8 @@ const botMessages = faMessages.bot as {
   error: string;
   insufficient: string;
   memoPresets: string[];
+  codeMessage: string;
+  startWelcome: string;
 };
 
 export function verifyWebhookSecret(req: Request): boolean {
@@ -202,6 +204,10 @@ export async function handleUpdate(update: TgUpdate): Promise<void> {
 async function handleMessage(message: TgMessage): Promise<void> {
   const chatId = message.chat.id;
   if (!message.from) {
+    return;
+  }
+  if (message.text && /^\/start(\s|$)/.test(message.text)) {
+    await sendMessage({ chatId, text: botMessages.startWelcome });
     return;
   }
   const intent = extractPaymentIntent(message);

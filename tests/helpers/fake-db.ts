@@ -280,6 +280,24 @@ export function createFakeDb(
     }
   };
 
+  const checkUniqueUpdate = (
+    table: string,
+    patch: Record<string, unknown>,
+    matched: Array<Record<string, unknown>>,
+  ) => {
+    const uniqueColumns = options.unique?.[table] ?? [];
+    const matchedSet = new Set(matched);
+    const others = (store.get(table) ?? []).filter((row) => !matchedSet.has(row));
+    for (const [column, value] of Object.entries(patch)) {
+      if (uniqueColumns.includes(column) && value !== undefined) {
+        const conflict = others.some((existing) => looseEquals(existing[column], value));
+        if (conflict) {
+          throw new Error(`duplicate key value violates unique constraint "${table}_${column}"`);
+        }
+      }
+    }
+  };
+
   return {
     tables: () => {
       const snapshot: Record<string, Array<Record<string, unknown>>> = {};
@@ -324,6 +342,7 @@ export function createFakeDb(
             const matched = rows.filter((row) =>
               cond ? buildPredicate(cond)(row) : true,
             );
+            checkUniqueUpdate(name, patch, matched);
             for (const row of matched) {
               Object.assign(row, patch);
             }

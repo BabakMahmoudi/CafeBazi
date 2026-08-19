@@ -62,6 +62,48 @@
     "rateLimited": "Too many attempts. Try again in an hour.",
     "generic": "Something went wrong. Try again."
   },
+  "passwordAuth": {
+    "signin": "Sign in",
+    "signup": "Sign up",
+    "signingIn": "Signing in…",
+    "signingUp": "Creating account…",
+    "username": "Username",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "or": "or",
+    "invalidCredentials": "Wrong username or password.",
+    "accountLocked": "Too many failed attempts. Try again in 15 minutes.",
+    "usernameTaken": "This username is already taken.",
+    "usernameInvalid": "Username must be 5–32 characters: letters, digits, or underscores.",
+    "passwordWeak": "Password must be at least 8 characters.",
+    "confirmMismatch": "Passwords do not match.",
+    "generic": "Something went wrong. Try again."
+  },
+  "telegramCode": {
+    "title": "Sign in with a Telegram code",
+    "subtitle": "A sign-in code is sent to your Telegram by the bot.",
+    "username": "Username",
+    "sendCode": "Send code",
+    "sendingCode": "Sending code…",
+    "codeSent": "Code sent to your Telegram.",
+    "codeLabel": "6-digit code",
+    "verify": "Sign in",
+    "verifying": "Verifying…",
+    "resend": "Resend",
+    "resendIn": "Resend in {n}s",
+    "accountNotFound": "No account found with this username.",
+    "invalidCode": "The code is incorrect.",
+    "codeExpired": "The code expired. Request a new one.",
+    "codeAttempts": "Too many attempts. Request a new code.",
+    "rateLimited": "Too many requests. Try again in 15 minutes.",
+    "resendCooldown": "Please wait a moment and try again.",
+    "botNotStarted": "You haven't started the bot yet. Open the bot and press Start.",
+    "openBot": "Open the bot",
+    "sendFailed": "Could not send the code. Try again.",
+    "signupCollision": "This username belongs to a Telegram account. You can sign in with a Telegram code instead.",
+    "switchToCode": "Sign in with a Telegram code",
+    "generic": "Something went wrong. Try again."
+  },
   "wallets": {
     "title": "Linked wallets",
     "loading": "Loading…",
@@ -195,6 +237,8 @@
     "alreadyHandled": "This request was already processed.",
     "error": "Sorry, something went wrong. Try again.",
     "insufficient": "Your balance is not enough.",
-    "memoPresets": ["☕", "🎁", "Enjoy!", "Bon appetit"]
+    "memoPresets": ["☕", "🎁", "Enjoy!", "Bon appetit"],
+    "codeMessage": "Your sign-in code: {code}\nThis code is valid for 10 minutes. If you didn't request this, ignore this message.",
+    "startWelcome": "Welcome to Cafe Bazi ☕\nTo gift a cup of coffee, try /coffee @username or forward your friend's message."
   }
 }

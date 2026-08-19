@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { desc, eq, ilike, inArray, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  authCredentials,
   balances,
   stellarAccounts,
   users,
@@ -188,6 +189,23 @@ export async function updateUserForAdmin(input: {
     })
     .where(eq(users.id, input.userId))
     .returning();
+
+  if (input.telegramUsername !== undefined) {
+    const credentialRows = await db
+      .select()
+      .from(authCredentials)
+      .where(eq(authCredentials.userId, input.userId))
+      .limit(1);
+    if (credentialRows[0]) {
+      await db
+        .update(authCredentials)
+        .set({
+          username: input.telegramUsername.toLowerCase(),
+          updatedAt: new Date(),
+        })
+        .where(eq(authCredentials.id, credentialRows[0].id));
+    }
+  }
 
   return loadView(input.userId, updated);
 }

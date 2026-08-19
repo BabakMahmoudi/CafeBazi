@@ -33,6 +33,7 @@ function seedDb(overrides: {
   users?: Array<Record<string, unknown>>;
   stellarAccounts?: Array<Record<string, unknown>>;
   balances?: Array<Record<string, unknown>>;
+  authCredentials?: Array<Record<string, unknown>>;
 } = {}) {
   return createFakeDb(
     {
@@ -44,6 +45,7 @@ function seedDb(overrides: {
         { id: "sa1", userId: "u1", publicKey: "GA-U1", encryptedSecret: "enc", status: "active" },
       ],
       balances: overrides.balances ?? [{ id: "b1", userId: "u1", amount: "12" }],
+      auth_credentials: overrides.authCredentials ?? [],
     },
     { unique: { users: ["telegramId"] } },
   );
@@ -219,6 +221,36 @@ describe("admin service — user management", () => {
       await expect(
         updateUserForAdmin({ userId: "ghost", actorUserId: "u2", role: "member" }),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("syncs auth_credentials.username when a password user's handle is edited", async () => {
+      h.db = seedDb({
+        authCredentials: [
+          {
+            id: "ac1",
+            userId: "u1",
+            username: "ali",
+            passwordHash: "scrypt$x",
+            failedAttempts: 0,
+            lockedUntil: null,
+            passwordChangedAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      });
+
+      const updated = await updateUserForAdmin({
+        userId: "u1",
+        actorUserId: "u2",
+        telegramUsername: "AliNew",
+      });
+
+      expect(updated.telegramUsername).toBe("AliNew");
+      expect(h.db.tables().users.find((u) => u.id === "u1")?.telegramUsername).toBe("AliNew");
+      expect(h.db.tables().auth_credentials.find((c) => c.userId === "u1")?.username).toBe(
+        "alinew",
+      );
     });
   });
 

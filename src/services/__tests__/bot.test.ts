@@ -193,6 +193,16 @@ describe("bot service", () => {
   });
 
   describe("forward-to-pay flow", () => {
+    it("answers /start with a welcome and never attempts a payment", async () => {
+      await handleUpdate(messageUpdate({ text: "/start" }));
+
+      expect(h.executePayment).not.toHaveBeenCalled();
+      expect(h.sendMessage).toHaveBeenCalledTimes(1);
+      const [message] = h.sendMessage.mock.calls[0];
+      expect(message.text).toContain("خوش آمد");
+      expect(message.replyMarkup).toBeUndefined();
+    });
+
     it("shows a confirm keyboard before any payment executes", async () => {
       h.getUserByTelegramId.mockImplementation(async (id: string) =>
         id === "100" ? senderUser : id === "200" ? recipientUser : null,

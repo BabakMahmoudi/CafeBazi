@@ -1,5 +1,5 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { stellarAccounts, users, type StellarAccountStatus } from "@/db/schema";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
@@ -26,29 +26,67 @@ export async function upsertUserFromTelegram(input: TelegramUserInput): Promise<
     .limit(1);
 
   if (existing[0]) {
-    const [updated] = await db
-      .update(users)
-      .set({
-        telegramUsername: input.username ?? existing[0].telegramUsername,
-        firstName,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, existing[0].id))
-      .returning();
-    return updated;
+    const previousUsername = existing[0].telegramUsername;
+    try {
+      const [updated] = await db
+        .update(users)
+        .set({
+          telegramUsername: input.username ?? previousUsername,
+          firstName,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, existing[0].id))
+        .returning();
+      return updated;
+    } catch (error) {
+      if (error instanceof Error && /duplicate key/i.test(error.message) && input.username) {
+        console.warn(
+          `upsertUserFromTelegram: handle "${input.username}" conflicts, keeping previous handle`,
+        );
+        const [updated] = await db
+          .update(users)
+          .set({
+            telegramUsername: previousUsername,
+            firstName,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, existing[0].id))
+          .returning();
+        return updated;
+      }
+      throw error;
+    }
   }
 
-  const [created] = await db
-    .insert(users)
-    .values({
-      telegramId,
-      telegramUsername: input.username,
-      firstName,
-      phone: input.phone,
-      role: "member",
-    })
-    .returning();
-  return created;
+  try {
+    const [created] = await db
+      .insert(users)
+      .values({
+        telegramId,
+        telegramUsername: input.username,
+        firstName,
+        phone: input.phone,
+        role: "member",
+      })
+      .returning();
+    return created;
+  } catch (error) {
+    if (error instanceof Error && /duplicate key/i.test(error.message)) {
+      console.warn(`upsertUserFromTelegram: handle "${input.username}" conflicts, inserting without it`);
+      const [created] = await db
+        .insert(users)
+        .values({
+          telegramId,
+          telegramUsername: null,
+          firstName,
+          phone: input.phone,
+          role: "member",
+        })
+        .returning();
+      return created;
+    }
+    throw error;
+  }
 }
 
 export async function getUserById(userId: string) {
@@ -65,7 +103,7 @@ export async function getUserByUsername(username: string) {
   const rows = await db
     .select()
     .from(users)
-    .where(eq(users.telegramUsername, username))
+    .where(eq(sql`lower(${users.telegramUsername})`, username.toLowerCase()))
     .limit(1);
   return rows[0] ?? null;
 }

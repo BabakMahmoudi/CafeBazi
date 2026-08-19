@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -59,6 +60,9 @@ export type AuthChallengePurpose = (typeof AUTH_CHALLENGE_PURPOSES)[number];
 export const AUTH_CHALLENGE_STATUSES = ["pending", "used", "expired"] as const;
 export type AuthChallengeStatus = (typeof AUTH_CHALLENGE_STATUSES)[number];
 
+export const TELEGRAM_CODE_STATUSES = ["pending", "used", "expired"] as const;
+export type TelegramCodeStatus = (typeof TELEGRAM_CODE_STATUSES)[number];
+
 export const users = pgTable(
   "users",
   {
@@ -73,7 +77,29 @@ export const users = pgTable(
   },
   (table) => [
     uniqueIndex("users_telegram_id_unique").on(table.telegramId),
+    uniqueIndex("users_telegram_username_lower_unique").on(sql`lower(${table.telegramUsername})`),
     index("users_telegram_username_idx").on(table.telegramUsername),
+  ],
+);
+
+export const authCredentials = pgTable(
+  "auth_credentials",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull().references(() => users.id),
+    username: text("username").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    passwordChangedAt: timestamp("password_changed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("auth_credentials_user_id_unique").on(table.userId),
+    uniqueIndex("auth_credentials_username_unique").on(table.username),
   ],
 );
 
@@ -304,5 +330,23 @@ export const authChallenges = pgTable(
     uniqueIndex("auth_challenges_nonce_unique").on(table.nonce),
     index("auth_challenges_status_idx").on(table.status),
     index("auth_challenges_public_key_idx").on(table.publicKey),
+  ],
+);
+
+export const telegramCodes = pgTable(
+  "telegram_codes",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull().references(() => users.id),
+    codeHash: text("code_hash").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    status: text("status", { enum: TELEGRAM_CODE_STATUSES }).notNull().default("pending"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("telegram_codes_user_status_idx").on(table.userId, table.status),
+    index("telegram_codes_user_created_idx").on(table.userId, table.createdAt),
   ],
 );
